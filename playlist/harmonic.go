@@ -11,8 +11,8 @@ import (
 
 // CamelotKey represents a parsed Camelot key
 type CamelotKey struct {
-	Letter string // "A" (minor) or "B" (major)
-	Number int    // 1-12
+	Letter byte // 'A' (minor) or 'B' (major)
+	Number int  // 1-12
 }
 
 // Compile regex once at package initialization
@@ -36,14 +36,14 @@ func ParseCamelotKey(key string) (*CamelotKey, error) {
 	}
 
 	return &CamelotKey{
-		Letter: matches[2],
+		Letter: matches[2][0], // Take first byte of "A" or "B"
 		Number: number,
 	}, nil
 }
 
 // String returns the string representation of a CamelotKey
 func (k *CamelotKey) String() string {
-	return fmt.Sprintf("%d%s", k.Number, k.Letter)
+	return fmt.Sprintf("%d%c", k.Number, k.Letter)
 }
 
 // HarmonicDistanceParsed calculates harmonic compatibility using pre-parsed keys
@@ -124,11 +124,11 @@ func GetCompatibleKeys(key string) []string {
 	compatible = append(compatible, key)
 
 	// Relative major/minor (distance 1)
-	otherLetter := "B"
-	if k.Letter == "B" {
-		otherLetter = "A"
+	otherLetter := byte('B')
+	if k.Letter == 'B' {
+		otherLetter = 'A'
 	}
-	compatible = append(compatible, fmt.Sprintf("%d%s", k.Number, otherLetter))
+	compatible = append(compatible, fmt.Sprintf("%d%c", k.Number, otherLetter))
 
 	// ±1 number with same letter (distance 1)
 	prevNum := k.Number - 1
@@ -139,12 +139,12 @@ func GetCompatibleKeys(key string) []string {
 	if nextNum > 12 {
 		nextNum = 1
 	}
-	compatible = append(compatible, fmt.Sprintf("%d%s", prevNum, k.Letter))
-	compatible = append(compatible, fmt.Sprintf("%d%s", nextNum, k.Letter))
+	compatible = append(compatible, fmt.Sprintf("%d%c", prevNum, k.Letter))
+	compatible = append(compatible, fmt.Sprintf("%d%c", nextNum, k.Letter))
 
 	// ±1 number with different letter (distance 2)
-	compatible = append(compatible, fmt.Sprintf("%d%s", prevNum, otherLetter))
-	compatible = append(compatible, fmt.Sprintf("%d%s", nextNum, otherLetter))
+	compatible = append(compatible, fmt.Sprintf("%d%c", prevNum, otherLetter))
+	compatible = append(compatible, fmt.Sprintf("%d%c", nextNum, otherLetter))
 
 	return compatible
 }

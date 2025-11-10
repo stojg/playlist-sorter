@@ -73,8 +73,6 @@ func LoadPlaylistWithMetadata(path string) ([]Track, error) {
 		validTracks = append(validTracks, *metadata)
 	}
 
-	fmt.Printf("[_] Loaded metadata for %d tracks\n", len(validTracks))
-
 	return validTracks, nil
 }
 

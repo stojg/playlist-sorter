@@ -23,6 +23,7 @@ type Track struct {
 	Title     string      // Track title
 	Energy    int         // Energy level 1-10 (0 if not available)
 	BPM       float64     // Beats per minute (0 if not available)
+	Index     int         // Index in original tracks slice (for fast cache lookups)
 }
 
 // Compile regexes once at package initialization
