@@ -313,6 +313,10 @@ loop:
 		population, nextPopulation = nextPopulation, population
 
 		// Track best individual
+		// Re-evaluate bestFitness with current config to allow fair comparison when config changes
+		if bestIndividual != nil {
+			bestFitness = calculateFitness(bestIndividual, config)
+		}
 		if scoredPopulation[0].Score < bestFitness {
 			bestFitness = scoredPopulation[0].Score
 			bestIndividual = slices.Clone(scoredPopulation[0].Genes)
