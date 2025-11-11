@@ -38,17 +38,18 @@ type GAConfig struct {
 	TournamentSize  int     `toml:"tournament_size"`
 }
 
-// DefaultConfig returns the default GA configuration matching the original constants
-// These values are research-backed defaults optimized for playlist ordering
+// DefaultConfig returns the default GA configuration with normalized fitness weights
+// All fitness weights are now in [0,1] range due to component normalization
+// Setting all weights to 0.5 gives equal importance to all components
 func DefaultConfig() GAConfig {
 	return GAConfig{
-		HarmonicWeight:       1.0,
-		SameArtistPenalty:    5.0,
-		SameAlbumPenalty:     2.0,
-		EnergyDeltaWeight:    3.0,
-		BPMDeltaWeight:       0.25,
+		HarmonicWeight:       0.5,
+		SameArtistPenalty:    0.5,
+		SameAlbumPenalty:     0.5,
+		EnergyDeltaWeight:    0.5,
+		BPMDeltaWeight:       0.5,
 		LowEnergyBiasPortion: 0.2,
-		LowEnergyBiasWeight:  10.0,
+		LowEnergyBiasWeight:  0.0,
 		MaxMutationRate:      0.3,
 		MinMutationRate:      0.1,
 		MutationDecayGen:     100.0,

@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"math"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -137,15 +136,15 @@ func initModel(tracks []playlist.Track, configPath string) model {
 	}
 
 	// Build parameter list with pointers to local config fields
-	// Note: math.MaxFloat64 is used for "no upper limit"
+	// All fitness weights now use [0,1] range due to component normalization
 	m.params = []Parameter{
-		{"Harmonic Weight", &localConfig.HarmonicWeight, nil, 0, math.MaxFloat64, 0.01, false},
-		{"Same Artist Penalty", &localConfig.SameArtistPenalty, nil, 0, math.MaxFloat64, 0.01, false},
-		{"Same Album Penalty", &localConfig.SameAlbumPenalty, nil, 0, math.MaxFloat64, 0.01, false},
-		{"Energy Delta Weight", &localConfig.EnergyDeltaWeight, nil, 0, math.MaxFloat64, 0.01, false},
-		{"BPM Delta Weight", &localConfig.BPMDeltaWeight, nil, 0, math.MaxFloat64, 0.01, false},
+		{"Harmonic Weight", &localConfig.HarmonicWeight, nil, 0, 1, 0.05, false},
+		{"Same Artist Penalty", &localConfig.SameArtistPenalty, nil, 0, 1, 0.05, false},
+		{"Same Album Penalty", &localConfig.SameAlbumPenalty, nil, 0, 1, 0.05, false},
+		{"Energy Delta Weight", &localConfig.EnergyDeltaWeight, nil, 0, 1, 0.05, false},
+		{"BPM Delta Weight", &localConfig.BPMDeltaWeight, nil, 0, 1, 0.05, false},
 		{"Low Energy Bias Portion", &localConfig.LowEnergyBiasPortion, nil, 0, 1, 0.01, false},
-		{"Low Energy Bias Weight", &localConfig.LowEnergyBiasWeight, nil, 0, math.MaxFloat64, 0.01, false},
+		{"Low Energy Bias Weight", &localConfig.LowEnergyBiasWeight, nil, 0, 1, 0.05, false},
 		{"Max Mutation Rate", &localConfig.MaxMutationRate, nil, 0, 1, 0.01, false},
 		{"Min Mutation Rate", &localConfig.MinMutationRate, nil, 0, 1, 0.01, false},
 		{"Mutation Decay Gen", &localConfig.MutationDecayGen, nil, 10, 1000, 1, false},

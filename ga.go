@@ -77,11 +77,23 @@ type EdgeData struct {
 	BPMDelta         float64
 }
 
+// FitnessNormalizers stores maximum possible values for each fitness component
+// Used to normalize components to [0,1] scale so weights have equal influence
+type FitnessNormalizers struct {
+	MaxHarmonic     float64 // Maximum possible harmonic distance across all transitions
+	MaxSameArtist   float64 // Maximum possible same artist occurrences
+	MaxSameAlbum    float64 // Maximum possible same album occurrences
+	MaxEnergyDelta  float64 // Maximum possible energy delta sum
+	MaxBPMDelta     float64 // Maximum possible BPM delta sum
+	MaxPositionBias float64 // Maximum possible position bias penalty
+}
+
 // edgeDataCache stores pre-calculated base values for track transitions
 // Indexed by [fromTrackIdx][toTrackIdx] for O(1) lookup
 // Built once using sync.Once to avoid race conditions
 var (
 	edgeDataCache [][]EdgeData
+	normalizers   FitnessNormalizers
 	cacheOnce     sync.Once
 )
 
@@ -441,6 +453,47 @@ func buildEdgeFitnessCache(tracks []playlist.Track) {
 				}
 			}
 		}
+
+		// Calculate normalization constants for 0-1 scaled fitness
+		// These represent maximum possible values for each component across the entire playlist
+		normalizers.MaxHarmonic = 12.0 * float64(n-1) // Max Camelot distance is 12
+
+		normalizers.MaxSameArtist = float64(n - 1) // Worst case: all transitions have same artist
+		normalizers.MaxSameAlbum = float64(n - 1)  // Worst case: all transitions have same album
+
+		// Calculate max energy delta from actual track data
+		minEnergy, maxEnergy := float64(tracks[0].Energy), float64(tracks[0].Energy)
+		for i := 1; i < n; i++ {
+			e := float64(tracks[i].Energy)
+			if e < minEnergy {
+				minEnergy = e
+			}
+			if e > maxEnergy {
+				maxEnergy = e
+			}
+		}
+		normalizers.MaxEnergyDelta = (maxEnergy - minEnergy) * float64(n-1)
+
+		// Calculate max BPM delta from actual track data
+		// Find the maximum BPM distance considering half/double time matching
+		maxBPMDist := 0.0
+		for i := 0; i < n; i++ {
+			for j := 0; j < n; j++ {
+				if i != j && tracks[i].BPM > 0 && tracks[j].BPM > 0 {
+					if edgeDataCache[i][j].BPMDelta > maxBPMDist {
+						maxBPMDist = edgeDataCache[i][j].BPMDelta
+					}
+				}
+			}
+		}
+		normalizers.MaxBPMDelta = maxBPMDist * float64(n-1)
+
+		// Calculate max position bias (sum of arithmetic series: 1 + 0.95 + 0.9 + ... for biasThreshold positions)
+		// Using default bias portion of 0.2 for normalization constant
+		biasThreshold := int(float64(n) * 0.2)
+		if biasThreshold > 0 {
+			normalizers.MaxPositionBias = (float64(biasThreshold) / 2.0) * maxEnergy
+		}
 	})
 }
 
@@ -465,28 +518,36 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 			idx2 := tracks[j].Index
 			edge := edgeDataCache[idx1][idx2]
 
-			// Apply weights at evaluation time (not cached) and track each component
-			harmonicPenalty := float64(edge.HarmonicDistance) * config.HarmonicWeight
+			// Normalize each component to [0,1] before applying weights
+			// This ensures all weights have equal influence when set to same value
+			normalizedHarmonic := float64(edge.HarmonicDistance) / normalizers.MaxHarmonic
+			harmonicPenalty := normalizedHarmonic * config.HarmonicWeight
 			breakdown.Harmonic += harmonicPenalty
 
 			if edge.SameArtist {
-				breakdown.SameArtist += config.SameArtistPenalty
+				normalizedArtist := 1.0 / normalizers.MaxSameArtist
+				breakdown.SameArtist += normalizedArtist * config.SameArtistPenalty
 			}
 			if edge.SameAlbum {
-				breakdown.SameAlbum += config.SameAlbumPenalty
+				normalizedAlbum := 1.0 / normalizers.MaxSameAlbum
+				breakdown.SameAlbum += normalizedAlbum * config.SameAlbumPenalty
 			}
 
-			energyPenalty := edge.EnergyDelta * config.EnergyDeltaWeight
+			normalizedEnergy := edge.EnergyDelta / normalizers.MaxEnergyDelta
+			energyPenalty := normalizedEnergy * config.EnergyDeltaWeight
 			breakdown.EnergyDelta += energyPenalty
 
-			bpmPenalty := edge.BPMDelta * config.BPMDeltaWeight
+			normalizedBPM := edge.BPMDelta / normalizers.MaxBPMDelta
+			bpmPenalty := normalizedBPM * config.BPMDeltaWeight
 			breakdown.BPMDelta += bpmPenalty
 		}
 
 		// Position-based energy penalty
 		if j < biasThreshold {
 			positionWeight := 1.0 - float64(j)/float64(biasThreshold)
-			energyPositionPenalty := float64(tracks[j].Energy) * positionWeight * config.LowEnergyBiasWeight
+			rawPositionBias := float64(tracks[j].Energy) * positionWeight
+			normalizedPositionBias := rawPositionBias / normalizers.MaxPositionBias
+			energyPositionPenalty := normalizedPositionBias * config.LowEnergyBiasWeight
 			breakdown.PositionBias += energyPositionPenalty
 		}
 	}
