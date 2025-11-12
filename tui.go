@@ -7,10 +7,11 @@ import (
 	"context"
 	"fmt"
 
+	"playlist-sorter/playlist"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"playlist-sorter/playlist"
 )
 
 // Parameter represents a tunable GA parameter with constraints
@@ -26,22 +27,22 @@ type Parameter struct {
 
 // model holds the TUI state
 type model struct {
-	sharedConfig  *SharedConfig       // Shared config for GA thread-safe access
-	params        []Parameter         // Parameter list with pointers to local config
-	selectedParam int                 // Currently selected parameter index
-	bestPlaylist  []playlist.Track    // Best playlist from GA
-	originalTracks []playlist.Track   // Original tracks (for restart in Phase 5)
-	bestFitness   float64             // Current best fitness
-	breakdown     FitnessBreakdown    // Fitness breakdown
-	generation    int                 // Current generation
-	genPerSec     float64             // Generations per second
-	width         int
-	height        int
-	configPath    string              // Config file path
-	ctx           context.Context     // Context for GA cancellation
-	cancel        context.CancelFunc  // Cancel function
-	updateChan    chan GAUpdate       // Channel for GA updates
-	quitting      bool
+	sharedConfig   *SharedConfig    // Shared config for GA thread-safe access
+	params         []Parameter      // Parameter list with pointers to local config
+	selectedParam  int              // Currently selected parameter index
+	bestPlaylist   []playlist.Track // Best playlist from GA
+	originalTracks []playlist.Track // Original tracks (for restart in Phase 5)
+	bestFitness    float64          // Current best fitness
+	breakdown      FitnessBreakdown // Fitness breakdown
+	generation     int              // Current generation
+	genPerSec      float64          // Generations per second
+	width          int
+	height         int
+	configPath     string             // Config file path
+	ctx            context.Context    // Context for GA cancellation
+	cancel         context.CancelFunc // Cancel function
+	updateChan     chan GAUpdate      // Channel for GA updates
+	quitting       bool
 }
 
 // Key bindings
@@ -139,10 +140,10 @@ func initModel(tracks []playlist.Track, configPath string) model {
 	// All fitness weights now use [0,1] range due to component normalization
 	m.params = []Parameter{
 		{"Harmonic Weight", &localConfig.HarmonicWeight, nil, 0, 1, 0.05, false},
-		{"Same Artist Penalty", &localConfig.SameArtistPenalty, nil, 0, 1, 0.05, false},
-		{"Same Album Penalty", &localConfig.SameAlbumPenalty, nil, 0, 1, 0.05, false},
 		{"Energy Delta Weight", &localConfig.EnergyDeltaWeight, nil, 0, 1, 0.05, false},
 		{"BPM Delta Weight", &localConfig.BPMDeltaWeight, nil, 0, 1, 0.05, false},
+		{"Same Artist Penalty", &localConfig.SameArtistPenalty, nil, 0, 1, 0.05, false},
+		{"Same Album Penalty", &localConfig.SameAlbumPenalty, nil, 0, 1, 0.05, false},
 		{"Low Energy Bias Portion", &localConfig.LowEnergyBiasPortion, nil, 0, 1, 0.01, false},
 		{"Low Energy Bias Weight", &localConfig.LowEnergyBiasWeight, nil, 0, 1, 0.05, false},
 		{"Max Mutation Rate", &localConfig.MaxMutationRate, nil, 0, 1, 0.01, false},
@@ -349,7 +350,7 @@ func (m model) View() string {
 		Padding(0, 1)
 
 	rightPanelStyle := lipgloss.NewStyle().
-		Width(m.width - 47).
+		Width(m.width-47).
 		Padding(0, 1)
 
 	// Combine panels horizontally
