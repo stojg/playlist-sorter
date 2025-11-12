@@ -102,22 +102,23 @@ func main() {
 	// Show sorted playlist with tabwriter
 	fmt.Println("\nSorted playlist:")
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "#\tKey\tBPM\tEnergy\tTitle\tArtist\tAlbum"); err != nil {
+	if _, err := fmt.Fprintln(w, "#\tKey\tBPM\tEng\tArtist\tTitle\tAlbum\tGenre"); err != nil {
 		log.Printf("Warning: failed to write header: %v", err)
 	}
-	if _, err := fmt.Fprintln(w, "---\t---\t---\t------\t-----\t------\t-----"); err != nil {
+	if _, err := fmt.Fprintln(w, "---\t---\t---\t---\t------\t-----\t-----\t-----"); err != nil {
 		log.Printf("Warning: failed to write separator: %v", err)
 	}
 
 	for i, track := range sortedTracks {
-		if _, err := fmt.Fprintf(w, "%d\t%s\t%.0f\t%d\t%s\t%s\t%s\n",
+		if _, err := fmt.Fprintf(w, "%d\t%s\t%.0f\t%d\t%s\t%s\t%s\t%s\n",
 			i+1,
 			track.Key,
 			track.BPM,
 			track.Energy,
+			truncate(track.Artist, 20),
 			truncate(track.Title, 30),
-			truncate(track.Artist, 25),
-			truncate(track.Album, 25),
+			truncate(track.Album, 20),
+			truncate(track.Genre, 15),
 		); err != nil {
 			log.Printf("Warning: failed to write track %d: %v", i+1, err)
 		}
@@ -171,12 +172,11 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, config *Shared
 
 	// Track progress with pretty printing
 	var previousBestFitness float64 = math.MaxFloat64
-	var lastPrintedGen int = -1
 
 	// Status line animation and ticker
 	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	spinnerIdx := 0
-	statusTicker := time.NewTicker(1 * time.Second)
+	statusTicker := time.NewTicker(500 * time.Millisecond)
 	defer statusTicker.Stop()
 
 	// Helper to format elapsed time (right-padded to 6 chars for max "59m59s")
@@ -219,17 +219,15 @@ loop:
 			currentGen = update.Generation
 
 			// Print progress when fitness improves
-			fitnessImproved := update.BestFitness < previousBestFitness
-			enoughGensPassed := currentGen-lastPrintedGen >= 10
+			fitnessImproved := update.BestFitness < previousBestFitness-1e-10 // Use epsilon to avoid float precision issues
 
-			if fitnessImproved && enoughGensPassed {
+			if fitnessImproved {
 				// Clear status line before printing progress
 				fmt.Print("\r\033[K")
 				elapsed := time.Since(startTime)
 				elapsedStr := formatElapsed(elapsed)
-				fmt.Printf("%s Gen %d - fitness: %.2f\n", elapsedStr, currentGen, update.BestFitness)
+				fmt.Printf("%s Gen %d - fitness: %.10f\n", elapsedStr, currentGen, update.BestFitness)
 				previousBestFitness = update.BestFitness
-				lastPrintedGen = currentGen
 			}
 
 		case <-statusTicker.C:

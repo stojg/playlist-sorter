@@ -15,13 +15,12 @@ Uses a genetic algorithm with Edge Recombination Crossover (ERC) to preserve goo
 
 ## Features
 
-- ✅ **Genetic Algorithm** with tournament selection, elitism, and immigration
-- ✅ **Edge Recombination Crossover (ERC)** - preserves adjacency from parent solutions
-- ✅ **2-opt Local Search** - polish top solutions with delta evaluation
-- ✅ **Performance Optimized** - 2.33x speedup through profiling and optimization
-- ✅ **Metadata Extraction** - reads BPM, key, energy, and artist/album from audio files
-- ✅ **Camelot Wheel** - harmonic mixing compatibility
-- ✅ **Configurable Parameters** - tune fitness weights for different genres
+- **Genetic Algorithm** with tournament selection, elitism, and immigration
+- **Edge Recombination Crossover (ERC)** - preserves adjacency from parent solutions
+- **2-opt Local Search** - polish top solutions with delta evaluation
+- **Metadata Extraction** - reads BPM, key, energy, and artist/album from audio files
+- **Camelot Wheel** - harmonic mixing compatibility
+- **Configurable Parameters** - tune fitness weights for different genres
 
 ## Installation
 
@@ -34,7 +33,6 @@ Uses a genetic algorithm with Edge Recombination Crossover (ERC) to preserve goo
 ### Build
 
 ```bash
-cd /Volumes/music/playlist-sorter
 go build -o playlist-sorter
 ```
 
@@ -100,7 +98,7 @@ playlist-sorter/
 
 ### Genetic Algorithm
 
-**Population**: 100 individuals
+**Population**: 
 **Selection**: Tournament selection (size 3) with top 2 elitism
 **Crossover**: Edge Recombination Crossover (ERC)
 **Mutation**: 20% rate - 50/50 split between swap (2-5 tracks) and inversion

@@ -19,6 +19,7 @@ type GAConfig struct {
 	SameAlbumPenalty  float64 `toml:"same_album_penalty"`
 	EnergyDeltaWeight float64 `toml:"energy_delta_weight"`
 	BPMDeltaWeight    float64 `toml:"bpm_delta_weight"`
+	GenreWeight       float64 `toml:"genre_weight"` // -1.0 (spread) to +1.0 (cluster)
 
 	// Position bias
 	LowEnergyBiasPortion float64 `toml:"low_energy_bias_portion"`
@@ -48,6 +49,7 @@ func DefaultConfig() GAConfig {
 		SameAlbumPenalty:     0.5,
 		EnergyDeltaWeight:    0.5,
 		BPMDeltaWeight:       0.5,
+		GenreWeight:          0.0, // Neutral: 0=ignore, +ve=cluster, -ve=spread
 		LowEnergyBiasPortion: 0.2,
 		LowEnergyBiasWeight:  0.0,
 		MaxMutationRate:      0.3,
@@ -127,6 +129,7 @@ func roundConfigPrecision(config GAConfig) GAConfig {
 	config.SameAlbumPenalty = round(config.SameAlbumPenalty)
 	config.EnergyDeltaWeight = round(config.EnergyDeltaWeight)
 	config.BPMDeltaWeight = round(config.BPMDeltaWeight)
+	config.GenreWeight = round(config.GenreWeight)
 	config.LowEnergyBiasPortion = round(config.LowEnergyBiasPortion)
 	config.LowEnergyBiasWeight = round(config.LowEnergyBiasWeight)
 	config.MaxMutationRate = round(config.MaxMutationRate)

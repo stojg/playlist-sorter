@@ -144,6 +144,7 @@ func initModel(tracks []playlist.Track, configPath string) model {
 		{"Harmonic Weight", &localConfig.HarmonicWeight, nil, 0, 1, 0.05, false},
 		{"Energy Delta Weight", &localConfig.EnergyDeltaWeight, nil, 0, 1, 0.05, false},
 		{"BPM Delta Weight", &localConfig.BPMDeltaWeight, nil, 0, 1, 0.05, false},
+		{"Genre Weight", &localConfig.GenreWeight, nil, -1, 1, 0.01, false},
 		{"Same Artist Penalty", &localConfig.SameArtistPenalty, nil, 0, 1, 0.05, false},
 		{"Same Album Penalty", &localConfig.SameAlbumPenalty, nil, 0, 1, 0.05, false},
 		{"Low Energy Bias Portion", &localConfig.LowEnergyBiasPortion, nil, 0, 1, 0.01, false},
@@ -289,7 +290,9 @@ func (m *model) decreaseParam() {
 func (m *model) syncConfigToGA() {
 	// Parameters already modified m.localConfig directly via pointers
 	// Just copy the entire struct to shared config (thread-safe)
+	debugf("[TUI] Updating config - Genre Weight: %.2f", m.localConfig.GenreWeight)
 	m.sharedConfig.Update(*m.localConfig)
+	debugf("[TUI] Config update complete")
 }
 
 // resetToDefaults resets all parameters to their default values
@@ -298,21 +301,22 @@ func (m *model) resetToDefaults() {
 
 	// Update parameter values to defaults
 	*m.params[0].Value = defaults.HarmonicWeight
-	*m.params[1].Value = defaults.SameArtistPenalty
-	*m.params[2].Value = defaults.SameAlbumPenalty
-	*m.params[3].Value = defaults.EnergyDeltaWeight
-	*m.params[4].Value = defaults.BPMDeltaWeight
-	*m.params[5].Value = defaults.LowEnergyBiasPortion
-	*m.params[6].Value = defaults.LowEnergyBiasWeight
-	*m.params[7].Value = defaults.MaxMutationRate
-	*m.params[8].Value = defaults.MinMutationRate
-	*m.params[9].Value = defaults.MutationDecayGen
-	*m.params[10].IntValue = defaults.MinSwapMutations
-	*m.params[11].IntValue = defaults.MaxSwapMutations
-	*m.params[12].IntValue = defaults.PopulationSize
-	*m.params[13].Value = defaults.ImmigrationRate
-	*m.params[14].Value = defaults.ElitePercentage
-	*m.params[15].IntValue = defaults.TournamentSize
+	*m.params[1].Value = defaults.EnergyDeltaWeight
+	*m.params[2].Value = defaults.BPMDeltaWeight
+	*m.params[3].Value = defaults.GenreWeight
+	*m.params[4].Value = defaults.SameArtistPenalty
+	*m.params[5].Value = defaults.SameAlbumPenalty
+	*m.params[6].Value = defaults.LowEnergyBiasPortion
+	*m.params[7].Value = defaults.LowEnergyBiasWeight
+	*m.params[8].Value = defaults.MaxMutationRate
+	*m.params[9].Value = defaults.MinMutationRate
+	*m.params[10].Value = defaults.MutationDecayGen
+	*m.params[11].IntValue = defaults.MinSwapMutations
+	*m.params[12].IntValue = defaults.MaxSwapMutations
+	*m.params[13].IntValue = defaults.PopulationSize
+	*m.params[14].Value = defaults.ImmigrationRate
+	*m.params[15].Value = defaults.ElitePercentage
+	*m.params[16].IntValue = defaults.TournamentSize
 
 	// Sync to GA
 	m.syncConfigToGA()
@@ -389,10 +393,10 @@ func (m model) renderPlaylist() string {
 	s += titleStyle.Render("Best Playlist Preview") + "\n\n"
 
 	// Header
-	s += playlistHeaderStyle.Render(fmt.Sprintf("%-3s %-4s %-4s %-3s %-20s %-30s %-20s", "#", "Key", "BPM", "Eng", "Artist", "Title", "Album")) + "\n"
+	s += playlistHeaderStyle.Render(fmt.Sprintf("%-3s %-4s %-4s %-3s %-20s %-30s %-20s %-15s", "#", "Key", "BPM", "Eng", "Artist", "Title", "Album", "Genre")) + "\n"
 
-	// Show top 15 tracks from best playlist
-	maxTracks := 15
+	// Show top 25 tracks from best playlist
+	maxTracks := 25
 	if len(m.bestPlaylist) < maxTracks {
 		maxTracks = len(m.bestPlaylist)
 	}
@@ -402,7 +406,8 @@ func (m model) renderPlaylist() string {
 		artist := truncate(track.Artist, 20)
 		title := truncate(track.Title, 30)
 		album := truncate(track.Album, 20)
-		s += fmt.Sprintf("%-3d %-4s %-4.0f %-3d %-20s %-30s %-20s\n",
+		genre := truncate(track.Genre, 15)
+		s += fmt.Sprintf("%-3d %-4s %-4.0f %-3d %-20s %-30s %-20s %-15s\n",
 			i+1,
 			track.Key,
 			track.BPM,
@@ -410,6 +415,7 @@ func (m model) renderPlaylist() string {
 			artist,
 			title,
 			album,
+			genre,
 		)
 	}
 
@@ -432,10 +438,11 @@ func (m model) renderBreakdown() string {
 		// No breakdown available yet
 		return ""
 	}
-	breakdown := fmt.Sprintf("Breakdown: Harmonic: %.4f | Energy: %.4f | BPM: %.4f | Artist: %.4f | Album: %.4f | Bias: %.4f",
+	breakdown := fmt.Sprintf("Breakdown: Harmonic: %.4f | Energy: %.4f | BPM: %.4f | Genre: %.4f | Artist: %.4f | Album: %.4f | Bias: %.4f",
 		m.breakdown.Harmonic,
 		m.breakdown.EnergyDelta,
 		m.breakdown.BPMDelta,
+		m.breakdown.GenreChange,
 		m.breakdown.SameArtist,
 		m.breakdown.SameAlbum,
 		m.breakdown.PositionBias,
@@ -456,6 +463,11 @@ func (m model) renderHelp() string {
 
 // RunTUI starts the TUI mode
 func RunTUI(playlistPath string) error {
+	// Initialize debug logging
+	if err := InitDebugLog("playlist-sorter-debug.log"); err != nil {
+		return fmt.Errorf("failed to init debug log: %w", err)
+	}
+
 	// Load playlist
 	tracks, err := playlist.LoadPlaylistWithMetadata(playlistPath)
 	if err != nil {

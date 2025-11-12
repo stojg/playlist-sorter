@@ -21,6 +21,7 @@ type Track struct {
 	Artist    string      // Artist name
 	Album     string      // Album name
 	Title     string      // Track title
+	Genre     string      // Genre from ID3 tags (empty if not available)
 	Energy    int         // Energy level 1-10 (0 if not available)
 	BPM       float64     // Beats per minute (0 if not available)
 	Index     int         // Index in original tracks slice (for fast cache lookups)
@@ -60,6 +61,7 @@ func GetTrackMetadata(trackPath string) (*Track, error) {
 	artist := metadata.Artist()
 	album := metadata.Album()
 	title := metadata.Title()
+	genre := metadata.Genre()
 	comments := metadata.Comment()
 
 	// If title is empty, use filename
@@ -103,6 +105,7 @@ func GetTrackMetadata(trackPath string) (*Track, error) {
 		Artist:    artist,
 		Album:     album,
 		Title:     title,
+		Genre:     genre,
 		Energy:    energy,
 		BPM:       bpm,
 	}, nil
