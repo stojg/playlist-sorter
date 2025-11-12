@@ -70,6 +70,11 @@ func main() {
 		log.Fatalf("Failed to load playlist: %v", err)
 	}
 
+	// Assign Index values to tracks before any concurrent access
+	for i := range tracks {
+		tracks[i].Index = i
+	}
+
 	// Load config from file or use defaults
 	config, _ := LoadConfig(GetConfigPath())
 

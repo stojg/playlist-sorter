@@ -388,15 +388,10 @@ func calculateFitnessWithBreakdown(individual []playlist.Track, config GAConfig)
 // buildEdgeFitnessCache pre-calculates base values for all possible track pairs
 // Weights are NOT cached - they're applied at evaluation time for live parameter updates
 // Uses sync.Once to ensure cache is built exactly once, avoiding race conditions
-// Also assigns Index values to tracks (safe because it's inside sync.Once)
+// Note: Track Index values must be assigned before calling this function
 func buildEdgeFitnessCache(tracks []playlist.Track) {
 	cacheOnce.Do(func() {
 		n := len(tracks)
-
-		// Assign Index values to tracks (safe - happens exactly once before any concurrent access)
-		for i := range tracks {
-			tracks[i].Index = i
-		}
 
 		// Allocate 2D array for edge data
 		edgeDataCache = make([][]EdgeData, n)
@@ -458,15 +453,8 @@ func buildEdgeFitnessCache(tracks []playlist.Track) {
 		// These represent maximum possible values for each component across the entire playlist
 		normalizers.MaxHarmonic = 12.0 * float64(n-1) // Max Camelot distance is 12
 
-		// For distance-based penalties: worst case is all tracks have same artist/album
-		// Sum of all pairwise penalties: 1/1 + 1/1 + ... (n-1 times) + 1/2 + 1/2 + ... (n-2 times) + ...
-		// This equals: sum_{d=1}^{n/2} (n-d) * (1/d)
-		var maxArtistAlbumPenalty float64
-		for d := 1; d <= n/2; d++ {
-			maxArtistAlbumPenalty += float64(n-d) * (1.0 / float64(d))
-		}
-		normalizers.MaxSameArtist = maxArtistAlbumPenalty
-		normalizers.MaxSameAlbum = maxArtistAlbumPenalty
+		normalizers.MaxSameArtist = float64(n - 1) // Worst case: all transitions have same artist
+		normalizers.MaxSameAlbum = float64(n - 1)  // Worst case: all transitions have same album
 
 		// Calculate max energy delta from actual track data
 		minEnergy, maxEnergy := float64(tracks[0].Energy), float64(tracks[0].Energy)
@@ -545,6 +533,15 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 			harmonicPenalty := normalizedHarmonic * config.HarmonicWeight
 			breakdown.Harmonic += harmonicPenalty
 
+			if edge.SameArtist {
+				normalizedArtist := 1.0 / normalizers.MaxSameArtist
+				breakdown.SameArtist += normalizedArtist * config.SameArtistPenalty
+			}
+			if edge.SameAlbum {
+				normalizedAlbum := 1.0 / normalizers.MaxSameAlbum
+				breakdown.SameAlbum += normalizedAlbum * config.SameAlbumPenalty
+			}
+
 			normalizedEnergy := edge.EnergyDelta / normalizers.MaxEnergyDelta
 			energyPenalty := normalizedEnergy * config.EnergyDeltaWeight
 			breakdown.EnergyDelta += energyPenalty
@@ -561,32 +558,6 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 			normalizedPositionBias := rawPositionBias / normalizers.MaxPositionBias
 			energyPositionPenalty := normalizedPositionBias * config.LowEnergyBiasWeight
 			breakdown.PositionBias += energyPositionPenalty
-		}
-	}
-
-	// Distance-based artist/album penalties (pairwise comparison for the segment)
-	// Penalty decreases with circular distance - closest pairs get highest penalty
-	n := len(tracks)
-	for i := start; i <= end; i++ {
-		for j := i + 1; j <= end; j++ {
-			// Same artist penalty based on circular distance
-			if tracks[i].Artist == tracks[j].Artist && tracks[i].Artist != "" {
-				distance := circularDistance(i, j, n)
-				if distance > 0 {
-					penalty := 1.0 / float64(distance)
-					normalizedPenalty := penalty / normalizers.MaxSameArtist
-					breakdown.SameArtist += normalizedPenalty * config.SameArtistPenalty
-				}
-			}
-			// Same album penalty based on circular distance
-			if tracks[i].Album == tracks[j].Album && tracks[i].Album != "" {
-				distance := circularDistance(i, j, n)
-				if distance > 0 {
-					penalty := 1.0 / float64(distance)
-					normalizedPenalty := penalty / normalizers.MaxSameAlbum
-					breakdown.SameAlbum += normalizedPenalty * config.SameAlbumPenalty
-				}
-			}
 		}
 	}
 

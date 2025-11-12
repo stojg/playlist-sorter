@@ -475,6 +475,11 @@ func RunTUI(playlistPath string) error {
 		return fmt.Errorf("failed to load playlist: %w", err)
 	}
 
+	// Assign Index values to tracks before any concurrent access
+	for i := range tracks {
+		tracks[i].Index = i
+	}
+
 	// Get config path
 	configPath := GetConfigPath()
 
