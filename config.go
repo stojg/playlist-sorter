@@ -92,6 +92,10 @@ func SaveConfig(path string, config GAConfig) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
+	// Round all float values to 2 decimal places to match UI precision
+	// This prevents floating point rounding errors from accumulating
+	config = roundConfigPrecision(config)
+
 	// Create file
 	f, err := os.Create(path)
 	if err != nil {
@@ -110,6 +114,28 @@ func SaveConfig(path string, config GAConfig) error {
 	}
 
 	return nil
+}
+
+// roundConfigPrecision rounds all float64 fields to 2 decimal places
+func roundConfigPrecision(config GAConfig) GAConfig {
+	round := func(x float64) float64 {
+		return float64(int(x*100+0.5)) / 100
+	}
+
+	config.HarmonicWeight = round(config.HarmonicWeight)
+	config.SameArtistPenalty = round(config.SameArtistPenalty)
+	config.SameAlbumPenalty = round(config.SameAlbumPenalty)
+	config.EnergyDeltaWeight = round(config.EnergyDeltaWeight)
+	config.BPMDeltaWeight = round(config.BPMDeltaWeight)
+	config.LowEnergyBiasPortion = round(config.LowEnergyBiasPortion)
+	config.LowEnergyBiasWeight = round(config.LowEnergyBiasWeight)
+	config.MaxMutationRate = round(config.MaxMutationRate)
+	config.MinMutationRate = round(config.MinMutationRate)
+	config.MutationDecayGen = round(config.MutationDecayGen)
+	config.ImmigrationRate = round(config.ImmigrationRate)
+	config.ElitePercentage = round(config.ElitePercentage)
+
+	return config
 }
 
 // GetConfigPath returns the default config file path
