@@ -28,7 +28,8 @@ type Parameter struct {
 // model holds the TUI state
 type model struct {
 	sharedConfig   *SharedConfig    // Shared config for GA thread-safe access
-	params         []Parameter      // Parameter list with pointers to local config
+	localConfig    *GAConfig        // Local config that params point to (pointer so addresses stay valid)
+	params         []Parameter      // Parameter list with pointers to localConfig fields
 	selectedParam  int              // Currently selected parameter index
 	bestPlaylist   []playlist.Track // Best playlist from GA
 	originalTracks []playlist.Track // Original tracks (for restart in Phase 5)
@@ -119,14 +120,15 @@ func initModel(tracks []playlist.Track, configPath string) model {
 		config: config,
 	}
 
+	// Allocate localConfig on heap so pointers remain valid
+	localConfig := &config
+
 	// Create context for GA cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Create local config copy for parameter binding
-	localConfig := config
-
 	m := model{
 		sharedConfig:   sharedConfig,
+		localConfig:    localConfig, // Store pointer to config
 		selectedParam:  0,
 		bestPlaylist:   tracks, // Start with original order
 		originalTracks: tracks,
@@ -136,7 +138,7 @@ func initModel(tracks []playlist.Track, configPath string) model {
 		updateChan:     make(chan GAUpdate, 10),
 	}
 
-	// Build parameter list with pointers to local config fields
+	// Build parameter list with pointers to localConfig fields
 	// All fitness weights now use [0,1] range due to component normalization
 	m.params = []Parameter{
 		{"Harmonic Weight", &localConfig.HarmonicWeight, nil, 0, 1, 0.05, false},
@@ -282,30 +284,12 @@ func (m *model) decreaseParam() {
 }
 
 // syncConfigToGA syncs parameter values to the shared config
+// Since all parameter pointers point to m.localConfig fields, we can simply
+// copy the entire struct instead of iterating through parameters
 func (m *model) syncConfigToGA() {
-	// Build config from parameter values
-	config := GAConfig{}
-
-	// Read from parameter pointers
-	config.HarmonicWeight = *m.params[0].Value
-	config.SameArtistPenalty = *m.params[1].Value
-	config.SameAlbumPenalty = *m.params[2].Value
-	config.EnergyDeltaWeight = *m.params[3].Value
-	config.BPMDeltaWeight = *m.params[4].Value
-	config.LowEnergyBiasPortion = *m.params[5].Value
-	config.LowEnergyBiasWeight = *m.params[6].Value
-	config.MaxMutationRate = *m.params[7].Value
-	config.MinMutationRate = *m.params[8].Value
-	config.MutationDecayGen = *m.params[9].Value
-	config.MinSwapMutations = *m.params[10].IntValue
-	config.MaxSwapMutations = *m.params[11].IntValue
-	config.PopulationSize = *m.params[12].IntValue
-	config.ImmigrationRate = *m.params[13].Value
-	config.ElitePercentage = *m.params[14].Value
-	config.TournamentSize = *m.params[15].IntValue
-
-	// Update shared config (thread-safe)
-	m.sharedConfig.Update(config)
+	// Parameters already modified m.localConfig directly via pointers
+	// Just copy the entire struct to shared config (thread-safe)
+	m.sharedConfig.Update(*m.localConfig)
 }
 
 // resetToDefaults resets all parameters to their default values
@@ -405,7 +389,7 @@ func (m model) renderPlaylist() string {
 	s += titleStyle.Render("Best Playlist Preview") + "\n\n"
 
 	// Header
-	s += playlistHeaderStyle.Render(fmt.Sprintf("%-3s %-4s %-4s %-3s %-20s %-20s", "#", "Key", "BPM", "Eng", "Artist", "Title")) + "\n"
+	s += playlistHeaderStyle.Render(fmt.Sprintf("%-3s %-4s %-4s %-3s %-20s %-30s %-20s", "#", "Key", "BPM", "Eng", "Artist", "Title", "Album")) + "\n"
 
 	// Show top 15 tracks from best playlist
 	maxTracks := 15
@@ -416,14 +400,16 @@ func (m model) renderPlaylist() string {
 	for i := 0; i < maxTracks; i++ {
 		track := m.bestPlaylist[i]
 		artist := truncate(track.Artist, 20)
-		title := truncate(track.Title, 20)
-		s += fmt.Sprintf("%-3d %-4s %-4.0f %-3d %-20s %-20s\n",
+		title := truncate(track.Title, 30)
+		album := truncate(track.Album, 20)
+		s += fmt.Sprintf("%-3d %-4s %-4.0f %-3d %-20s %-30s %-20s\n",
 			i+1,
 			track.Key,
 			track.BPM,
 			track.Energy,
 			artist,
 			title,
+			album,
 		)
 	}
 
@@ -446,7 +432,7 @@ func (m model) renderBreakdown() string {
 		// No breakdown available yet
 		return ""
 	}
-	breakdown := fmt.Sprintf("Breakdown: Harmonic: %.3f | Artist: %.3f | Album: %.3f | Energy: %.3f | BPM: %.3f | Bias: %.3f",
+	breakdown := fmt.Sprintf("Breakdown: Harmonic: %.4f | Artist: %.4f | Album: %.4f | Energy: %.4f | BPM: %.4f | Bias: %.4f",
 		m.breakdown.Harmonic,
 		m.breakdown.SameArtist,
 		m.breakdown.SameAlbum,
