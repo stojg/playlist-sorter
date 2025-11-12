@@ -483,12 +483,10 @@ func buildEdgeFitnessCache(tracks []playlist.Track) {
 		}
 		normalizers.MaxBPMDelta = maxBPMDist * float64(n-1)
 
-		// Calculate max position bias (sum of arithmetic series: 1 + 0.95 + 0.9 + ... for biasThreshold positions)
-		// Using default bias portion of 0.2 for normalization constant
-		biasThreshold := int(float64(n) * 0.2)
-		if biasThreshold > 0 {
-			normalizers.MaxPositionBias = (float64(biasThreshold) / 2.0) * maxEnergy
-		}
+		// Calculate max position bias: maximum energy value * max position weight (1.0)
+		// This normalizes each position independently, making the bias weight comparable to other weights
+		// The bias portion and position weights are applied at evaluation time
+		normalizers.MaxPositionBias = maxEnergy
 	})
 }
 
