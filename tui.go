@@ -445,7 +445,7 @@ func (m model) renderBreakdown() string {
 		// No breakdown available yet
 		return ""
 	}
-	breakdown := fmt.Sprintf("Breakdown: Harmonic: %.1f | Artist: %.1f | Album: %.1f | Energy: %.1f | BPM: %.1f | Bias: %.1f",
+	breakdown := fmt.Sprintf("Breakdown: Harmonic: %.3f | Artist: %.3f | Album: %.3f | Energy: %.3f | BPM: %.3f | Bias: %.3f",
 		m.breakdown.Harmonic,
 		m.breakdown.SameArtist,
 		m.breakdown.SameAlbum,
