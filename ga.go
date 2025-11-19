@@ -6,10 +6,8 @@ package main
 import (
 	"cmp"
 	"context"
-	"log"
 	"math"
 	"math/rand/v2"
-	"os"
 	"runtime"
 	"slices"
 	"sync"
@@ -35,26 +33,6 @@ const (
 	twoOptStartGen     = 50  // Generation to start applying 2-opt
 	twoOptIntervalGens = 100 // Apply 2-opt every N generations after start
 )
-
-// Debug logger - writes to file in visual mode
-var debugLog *log.Logger
-
-// InitDebugLog initializes debug logging to a file
-func InitDebugLog(filename string) error {
-	f, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	debugLog = log.New(f, "", log.Ltime|log.Lmicroseconds)
-	return nil
-}
-
-// debugf logs debug messages to file if debug logger is enabled
-func debugf(format string, args ...interface{}) {
-	if debugLog != nil {
-		debugLog.Printf(format, args...)
-	}
-}
 
 // Individual represents a candidate solution in the genetic algorithm
 // with its fitness score (lower is better)

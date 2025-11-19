@@ -484,28 +484,18 @@ func (m model) renderHelp() string {
 
 // RunTUI starts the TUI mode
 func RunTUI(playlistPath string) error {
-	// Initialize debug logging
-	if err := InitDebugLog("playlist-sorter-debug.log"); err != nil {
-		return fmt.Errorf("failed to init debug log: %w", err)
+	// Setup debug logging (always enabled for TUI)
+	if err := SetupDebugLog("playlist-sorter-debug.log"); err != nil {
+		return err
 	}
 
-	// Load playlist (silent - no progress messages)
-	tracks, err := playlist.LoadPlaylistWithMetadata(playlistPath, false)
+	// Load and validate playlist using common initialization
+	tracks, err := LoadPlaylistForMode(PlaylistOptions{
+		Path:    playlistPath,
+		Verbose: false,
+	}, false)
 	if err != nil {
-		return fmt.Errorf("failed to load playlist: %w", err)
-	}
-
-	// Handle edge cases
-	if len(tracks) == 0 {
-		return fmt.Errorf("playlist is empty, nothing to optimize")
-	}
-	if len(tracks) == 1 {
-		return fmt.Errorf("playlist has only one track, nothing to optimize")
-	}
-
-	// Assign Index values to tracks before any concurrent access
-	for i := range tracks {
-		tracks[i].Index = i
+		return err
 	}
 
 	// Get config path

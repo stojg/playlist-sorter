@@ -145,20 +145,14 @@ type reloadCompleteMsg struct {
 
 // RunViewMode starts the view-only mode with file watching
 func RunViewMode(playlistPath string) error {
-	// Load initial playlist (silent - no progress messages)
-	tracks, err := playlist.LoadPlaylistWithMetadata(playlistPath, false)
+	// Load and validate playlist using common initialization
+	// View mode allows single-track playlists (just for viewing)
+	tracks, err := LoadPlaylistForMode(PlaylistOptions{
+		Path:    playlistPath,
+		Verbose: false,
+	}, true)
 	if err != nil {
-		return fmt.Errorf("failed to load playlist: %w", err)
-	}
-
-	// Handle edge cases
-	if len(tracks) == 0 {
-		return fmt.Errorf("playlist is empty, nothing to view")
-	}
-
-	// Assign Index values to tracks
-	for i := range tracks {
-		tracks[i].Index = i
+		return err
 	}
 
 	// Create file watcher
