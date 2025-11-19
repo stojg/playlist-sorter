@@ -249,8 +249,14 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, config *Shared
 	// Start GA in goroutine
 	var bestIndividual []playlist.Track
 	done := make(chan []playlist.Track)
+	progress := &progressTracker{
+		updateChan:   updateChan,
+		sharedConfig: config,
+		lastGenTime:  startTime,
+	}
+	defer progress.close()
 	go func() {
-		result := geneticSort(ctx, tracks, config, updateChan)
+		result := geneticSort(ctx, tracks, config, progress)
 		done <- result
 	}()
 

@@ -175,7 +175,13 @@ func (m model) Init() tea.Cmd {
 func runGA(ctx context.Context, tracks []playlist.Track, config *SharedConfig, updateChan chan<- GAUpdate) tea.Cmd {
 	return func() tea.Msg {
 		// Run GA (blocks until context cancelled or GA completes)
-		geneticSort(ctx, tracks, config, updateChan)
+		progress := &progressTracker{
+			updateChan:   updateChan,
+			sharedConfig: config,
+			lastGenTime:  time.Now(),
+		}
+		defer progress.close()
+		geneticSort(ctx, tracks, config, progress)
 		return nil
 	}
 }

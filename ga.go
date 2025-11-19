@@ -61,6 +61,11 @@ type Individual struct {
 	Score float64          // Fitness score (lower = better)
 }
 
+// Compare returns -1 if this individual is better (lower score), 0 if equal, 1 if worse
+func (ind Individual) Compare(other Individual) int {
+	return cmp.Compare(ind.Score, other.Score)
+}
+
 // FitnessBreakdown shows the individual components contributing to fitness
 type FitnessBreakdown struct {
 	Harmonic     float64 // Harmonic distance penalties
@@ -157,7 +162,7 @@ var (
 // - BPM differences (accounting for half/double time mixing)
 // - Position bias (prefers low-energy tracks at start of playlist)
 // - Genre changes (optional, signed weight: positive=cluster, negative=spread)
-func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *SharedConfig, updateChan chan<- GAUpdate) []playlist.Track {
+func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *SharedConfig, progress *progressTracker) []playlist.Track {
 
 	const populationSize = 100
 
@@ -217,18 +222,7 @@ func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *Sha
 		bestIndividual                []playlist.Track
 		bestFitness                   = math.MaxFloat64
 		generationsWithoutImprovement = 0
-		lastGenTime                   = startTime
-		lastGenCount                  = 0
 	)
-
-	// Ensure channel is closed exactly once
-	var closeOnce sync.Once
-	closeChannel := func() {
-		if updateChan != nil {
-			closeOnce.Do(func() { close(updateChan) })
-		}
-	}
-	defer closeChannel()
 
 	// main loop
 loop:
@@ -259,15 +253,7 @@ loop:
 		debugf("[GA] Fitness evaluation complete for gen %d", gen)
 
 		// Sort population from lowest score (better fit) to highest (worse fit)
-		slices.SortFunc(scoredPopulation, func(a Individual, b Individual) int {
-			if a.Score < b.Score {
-				return -1
-			}
-			if a.Score > b.Score {
-				return 1
-			}
-			return 0
-		})
+		slices.SortFunc(scoredPopulation, func(a, b Individual) int { return a.Compare(b) })
 
 		// Apply 2-opt local search to elite periodically (improves sorted population in-place)
 		shouldRunTwoOpt := gen >= twoOptStartGen && (gen == twoOptStartGen || (gen-twoOptStartGen)%twoOptIntervalGens == 0)
@@ -297,34 +283,8 @@ loop:
 			generationsWithoutImprovement++
 		}
 
-		// Send update when fitness improves or every 10 generations
-		if (fitnessImproved || gen%10 == 0) && updateChan != nil {
-			// Calculate generation speed
-			now := time.Now()
-			elapsed := now.Sub(lastGenTime).Seconds()
-			genPerSec := 0.0
-			if elapsed > 0 {
-				genPerSec = float64(gen-lastGenCount) / elapsed
-			}
-			lastGenTime = now
-			lastGenCount = gen
-
-			// Send the all-time best individual (across all generations)
-			// Re-evaluate with current config for accurate fitness display and breakdown
-			breakdown := calculateFitnessWithBreakdown(bestIndividual, config)
-
-			select {
-			case updateChan <- GAUpdate{
-				Generation:   gen,
-				BestFitness:  breakdown.Total,
-				BestPlaylist: slices.Clone(bestIndividual),
-				GenPerSec:    genPerSec,
-				Breakdown:    breakdown,
-			}:
-			default:
-				// Don't block if channel is full
-			}
-		}
+		// Send progress update
+		progress.sendUpdate(gen, bestIndividual, fitnessImproved)
 
 		// Now we start the genetic algorithm itself
 
