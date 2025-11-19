@@ -692,12 +692,12 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 //	  - Complementary to crossover/mutation which provide global exploration
 //
 // Time complexity: O(n²) per iteration, where n = playlist length
-// Space complexity: O(n) for don't-look bits
+// Space complexity: O(n) for tracking exhausted positions
 func twoOptImprove(tracks []playlist.Track, config config.GAConfig) {
 	n := len(tracks)
 
-	// Don't look bits: track positions that recently failed to improve
-	dontLook := make([]bool, n)
+	// Track positions that recently failed to improve (exhausted from search)
+	positionsExhausted := make([]bool, n)
 
 	// Calculate initial full fitness once
 	currentFitness := calculateFitness(tracks, config)
@@ -714,7 +714,7 @@ func twoOptImprove(tracks []playlist.Track, config config.GAConfig) {
 
 		// For each position i in the playlist (but the last)
 		for i := 0; i < n-1; i++ {
-			if dontLook[i] {
+			if positionsExhausted[i] {
 				continue
 			}
 			positionImproved := false
@@ -747,11 +747,11 @@ func twoOptImprove(tracks []playlist.Track, config config.GAConfig) {
 				currentFitness = newFitness
 				improved = true
 				positionImproved = true
-				clear(dontLook)
+				clear(positionsExhausted)
 			}
 
 			if !positionImproved {
-				dontLook[i] = true
+				positionsExhausted[i] = true
 			}
 		}
 	}

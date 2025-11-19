@@ -216,17 +216,10 @@ func GetCompatibleKeys(key string) []string {
 	return compatible
 }
 
-// Helper functions
+// Helper function for integer absolute value
 func abs(x int) int {
 	if x < 0 {
 		return -x
 	}
 	return x
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

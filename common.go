@@ -38,8 +38,8 @@ type PlaylistOptions struct {
 	Verbose bool
 }
 
-// PlaylistData contains the loaded playlist and associated data
-type PlaylistData struct {
+// OptimizationContext contains the loaded playlist and associated data
+type OptimizationContext struct {
 	Tracks       []playlist.Track
 	Config       config.GAConfig
 	SharedConfig *SharedConfig
@@ -77,7 +77,7 @@ func LoadPlaylistForMode(opts PlaylistOptions, allowSingleTrack bool) ([]playlis
 
 // InitializePlaylist performs full initialization: load playlist, load config, build edge cache
 // This is used by CLI and TUI modes that need full optimization setup
-func InitializePlaylist(opts PlaylistOptions) (*PlaylistData, error) {
+func InitializePlaylist(opts PlaylistOptions) (*OptimizationContext, error) {
 	// Load and validate playlist
 	tracks, err := LoadPlaylistForMode(opts, false)
 	if err != nil {
@@ -95,7 +95,7 @@ func InitializePlaylist(opts PlaylistOptions) (*PlaylistData, error) {
 	// Build edge fitness cache (required for fitness calculations)
 	buildEdgeFitnessCache(tracks)
 
-	return &PlaylistData{
+	return &OptimizationContext{
 		Tracks:       tracks,
 		Config:       cfg,
 		SharedConfig: sharedConfig,

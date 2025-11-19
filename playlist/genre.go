@@ -4,6 +4,7 @@
 package playlist
 
 import (
+	"slices"
 	"strings"
 )
 
@@ -138,7 +139,7 @@ func GenreSimilarity(genre1, genre2 string) float64 {
 	chain2 := getAncestorChain(g2)
 
 	// Check if one is parent of the other
-	if contains(chain1, g2) || contains(chain2, g1) {
+	if slices.Contains(chain1, g2) || slices.Contains(chain2, g1) {
 		return genreParentChild
 	}
 
@@ -172,16 +173,6 @@ func getAncestorChain(genre string) []string {
 	}
 
 	return chain
-}
-
-// contains checks if a string is in a slice
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
 }
 
 // sharesParent checks if two ancestor chains share an immediate parent
