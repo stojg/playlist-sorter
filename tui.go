@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"playlist-sorter/config"
 	"playlist-sorter/playlist"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -29,7 +30,7 @@ type Parameter struct {
 // model holds the TUI state
 type model struct {
 	sharedConfig         *SharedConfig    // Shared config for GA thread-safe access
-	localConfig          *GAConfig        // Local config that params point to (pointer so addresses stay valid)
+	localConfig          *config.GAConfig        // Local config that params point to (pointer so addresses stay valid)
 	params               []Parameter      // Parameter list with pointers to localConfig fields
 	selectedParam        int              // Currently selected parameter index
 	bestPlaylist         []playlist.Track // Best playlist from GA
@@ -119,15 +120,15 @@ var (
 
 // initModel creates the initial model
 func initModel(tracks []playlist.Track, configPath string, playlistPath string) model {
-	config, _ := LoadConfig(configPath)
+	cfg, _ := config.LoadConfig(configPath)
 
 	// Create shared config for thread-safe GA access
 	sharedConfig := &SharedConfig{
-		config: config,
+		config: cfg,
 	}
 
 	// Allocate localConfig on heap so pointers remain valid
-	localConfig := &config
+	localConfig := &cfg
 
 	// Create context for GA cancellation
 	ctx, cancel := context.WithCancel(context.Background())
@@ -175,12 +176,12 @@ func (m model) Init() tea.Cmd {
 func runGA(ctx context.Context, tracks []playlist.Track, config *SharedConfig, updateChan chan<- GAUpdate) tea.Cmd {
 	return func() tea.Msg {
 		// Run GA (blocks until context cancelled or GA completes)
-		progress := &progressTracker{
+		progress := &Tracker{
 			updateChan:   updateChan,
 			sharedConfig: config,
 			lastGenTime:  time.Now(),
 		}
-		defer progress.close()
+		defer progress.Close()
 		geneticSort(ctx, tracks, config, progress)
 		return nil
 	}
@@ -243,7 +244,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Cancel GA context
 			m.cancel()
 			// Save config on quit
-			_ = SaveConfig(m.configPath, m.sharedConfig.Get())
+			_ = config.SaveConfig(m.configPath, m.sharedConfig.Get())
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Up):
@@ -321,7 +322,7 @@ func (m *model) syncConfigToGA() {
 
 // resetToDefaults resets all parameters to their default values
 func (m *model) resetToDefaults() {
-	defaults := DefaultConfig()
+	defaults := config.DefaultConfig()
 
 	// Update parameter values to defaults
 	*m.params[0].Value = defaults.HarmonicWeight
@@ -508,7 +509,7 @@ func RunTUI(playlistPath string) error {
 	}
 
 	// Get config path
-	configPath := GetConfigPath()
+	configPath := config.GetConfigPath()
 
 	// Create model
 	m := initModel(tracks, configPath, playlistPath)

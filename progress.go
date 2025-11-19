@@ -11,8 +11,8 @@ import (
 	"playlist-sorter/playlist"
 )
 
-// progressTracker tracks progress update state
-type progressTracker struct {
+// Tracker tracks progress update state
+type Tracker struct {
 	updateChan   chan<- GAUpdate
 	sharedConfig *SharedConfig
 	lastGenTime  time.Time
@@ -20,8 +20,8 @@ type progressTracker struct {
 	closeOnce    sync.Once
 }
 
-// sendUpdate sends a progress update to the channel if appropriate
-func (pt *progressTracker) sendUpdate(gen int, bestIndividual []playlist.Track, fitnessImproved bool) {
+// SendUpdate sends a progress update to the channel if appropriate
+func (pt *Tracker) SendUpdate(gen int, bestIndividual []playlist.Track, fitnessImproved bool) {
 	// Guard: skip if not time to update or no channel
 	if (!fitnessImproved && gen%50 != 0) || pt.updateChan == nil {
 		return
@@ -55,8 +55,8 @@ func (pt *progressTracker) sendUpdate(gen int, bestIndividual []playlist.Track, 
 	pt.lastGenCount = gen
 }
 
-// close ensures the update channel is closed exactly once
-func (pt *progressTracker) close() {
+// Close ensures the update channel is closed exactly once
+func (pt *Tracker) Close() {
 	if pt.updateChan != nil {
 		pt.closeOnce.Do(func() { close(pt.updateChan) })
 	}

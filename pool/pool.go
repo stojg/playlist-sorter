@@ -1,7 +1,7 @@
 // ABOUTME: Simple worker pool for parallelizing batch tasks
 // ABOUTME: Provides submit-and-wait pattern optimized for the genetic algorithm
 
-package main
+package pool
 
 import (
 	"runtime"

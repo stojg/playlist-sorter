@@ -15,7 +15,9 @@ import (
 	"sync"
 	"time"
 
+	"playlist-sorter/config"
 	"playlist-sorter/playlist"
+	"playlist-sorter/pool"
 )
 
 const (
@@ -90,21 +92,21 @@ type GAUpdate struct {
 // SharedConfig wraps GAConfig with a mutex for thread-safe access between GA and TUI
 type SharedConfig struct {
 	mu     sync.RWMutex
-	config GAConfig
+	config config.GAConfig
 }
 
 // Get returns a copy of the current config (thread-safe read)
-func (sc *SharedConfig) Get() GAConfig {
+func (sc *SharedConfig) Get() config.GAConfig {
 	sc.mu.RLock()
 	defer sc.mu.RUnlock()
 	return sc.config
 }
 
 // Update updates the config (thread-safe write)
-func (sc *SharedConfig) Update(config GAConfig) {
+func (sc *SharedConfig) Update(cfg config.GAConfig) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
-	sc.config = config
+	sc.config = cfg
 }
 
 // EdgeData stores pre-calculated base values for track transitions (without weights applied)
@@ -162,7 +164,7 @@ var (
 // - BPM differences (accounting for half/double time mixing)
 // - Position bias (prefers low-energy tracks at start of playlist)
 // - Genre changes (optional, signed weight: positive=cluster, negative=spread)
-func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *SharedConfig, progress *progressTracker) []playlist.Track {
+func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *SharedConfig, progress *Tracker) []playlist.Track {
 
 	const populationSize = 100
 
@@ -179,8 +181,8 @@ func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *Sha
 	buildEdgeFitnessCache(tracks)
 
 	// create worker pool for parallel fitness evaluation
-	pool := NewWorkerPool(runtime.NumCPU())
-	defer pool.Close()
+	workerPool := pool.NewWorkerPool(runtime.NumCPU())
+	defer workerPool.Close()
 
 	// scored population buffer (reused every generation to avoid allocations)
 	scoredPopulation := make([]Individual, populationSize)
@@ -245,11 +247,11 @@ loop:
 		// evaluate fitness for each individual playlist (parallelized with worker pool)
 		debugf("[GA] Starting fitness evaluation for gen %d", gen)
 		for i := range currentGen {
-			pool.Submit(func() {
+			workerPool.Submit(func() {
 				scoredPopulation[i] = Individual{Genes: currentGen[i], Score: calculateFitness(currentGen[i], config)}
 			})
 		}
-		pool.Wait()
+		workerPool.Wait()
 		debugf("[GA] Fitness evaluation complete for gen %d", gen)
 
 		// Sort population from lowest score (better fit) to highest (worse fit)
@@ -264,11 +266,11 @@ loop:
 			}
 			debugf("[GA] Starting 2-opt for gen %d (topCount=%d)", gen, topCount)
 			for i := 0; i < topCount; i++ {
-				pool.Submit(func() {
+				workerPool.Submit(func() {
 					twoOptImprove(scoredPopulation[i].Genes, config)
 				})
 			}
-			pool.Wait()
+			workerPool.Wait()
 			debugf("[GA] 2-opt complete for gen %d", gen)
 		}
 
@@ -284,7 +286,7 @@ loop:
 		}
 
 		// Send progress update
-		progress.sendUpdate(gen, bestIndividual, fitnessImproved)
+		progress.SendUpdate(gen, bestIndividual, fitnessImproved)
 
 		// Now we start the genetic algorithm itself
 
@@ -395,20 +397,20 @@ loop:
 }
 
 // calculateFitness computes the fitness score for a given playlist ordering
-func calculateFitness(individual []playlist.Track, config GAConfig) float64 {
+func calculateFitness(individual []playlist.Track, config config.GAConfig) float64 {
 	breakdown := calculateFitnessWithBreakdown(individual, config)
 	return breakdown.Total
 }
 
 // calculateFitnessWithBreakdown computes fitness and returns detailed breakdown
-func calculateFitnessWithBreakdown(individual []playlist.Track, config GAConfig) FitnessBreakdown {
+func calculateFitnessWithBreakdown(individual []playlist.Track, config config.GAConfig) FitnessBreakdown {
 	return segmentFitnessWithBreakdown(individual, 0, len(individual)-1, config)
 }
 
 // calculateTheoreticalMinimum calculates the theoretical minimum fitness score
 // This is NOT achievable in practice as the constraints conflict with each other
 // (e.g., monotonic energy vs clustered low energy at start), but provides a lower bound
-func calculateTheoreticalMinimum(tracks []playlist.Track, config GAConfig) float64 {
+func calculateTheoreticalMinimum(tracks []playlist.Track, config config.GAConfig) float64 {
 	n := len(tracks)
 	if n == 0 {
 		return 0.0
@@ -585,12 +587,12 @@ func buildEdgeFitnessCache(tracks []playlist.Track) {
 
 // segmentFitness calculates fitness contribution for a track segment
 // Reads base values from cache and applies current config weights at evaluation time
-func segmentFitness(tracks []playlist.Track, start, end int, config GAConfig) float64 {
+func segmentFitness(tracks []playlist.Track, start, end int, config config.GAConfig) float64 {
 	return segmentFitnessWithBreakdown(tracks, start, end, config).Total
 }
 
 // segmentFitnessWithBreakdown calculates fitness and returns breakdown of components
-func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config GAConfig) FitnessBreakdown {
+func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config config.GAConfig) FitnessBreakdown {
 	var breakdown FitnessBreakdown
 	biasThreshold := int(float64(len(tracks)) * config.LowEnergyBiasPortion)
 	// Precompute genre-related values to avoid repeated checks and calculations
@@ -708,7 +710,7 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 //
 // Time complexity: O(n²) per iteration, where n = playlist length
 // Space complexity: O(n) for don't-look bits
-func twoOptImprove(tracks []playlist.Track, config GAConfig) {
+func twoOptImprove(tracks []playlist.Track, config config.GAConfig) {
 	n := len(tracks)
 
 	// Don't look bits: track positions that recently failed to improve

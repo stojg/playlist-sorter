@@ -1,7 +1,7 @@
 // ABOUTME: Configuration management for genetic algorithm parameters
 // ABOUTME: Handles loading/saving TOML config files with fallback to defaults
 
-package main
+package config
 
 import (
 	"fmt"

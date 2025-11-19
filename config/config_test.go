@@ -1,7 +1,7 @@
 // ABOUTME: Tests for configuration load/save functionality
 // ABOUTME: Validates TOML parsing and default config fallback behavior
 
-package main
+package config
 
 import (
 	"os"

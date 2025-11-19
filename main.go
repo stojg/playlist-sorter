@@ -14,6 +14,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"playlist-sorter/config"
 	"playlist-sorter/playlist"
 )
 
@@ -107,7 +108,7 @@ func main() {
 	}
 
 	// Load config from file or use defaults
-	config, _ := LoadConfig(GetConfigPath())
+	cfg, _ := config.LoadConfig(config.GetConfigPath())
 
 	// Set up context with cancellation for Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
@@ -123,15 +124,15 @@ func main() {
 
 	// Wrap config in SharedConfig for consistency with TUI mode
 	sharedConfig := &SharedConfig{
-		config: config,
+		config: cfg,
 	}
 
 	// Build edge fitness cache (required for fitness calculations)
 	buildEdgeFitnessCache(tracks)
 
 	// Calculate fitness bounds for context
-	theoreticalMin := calculateTheoreticalMinimum(tracks, config)
-	initialFitness := calculateFitness(tracks, config)
+	theoreticalMin := calculateTheoreticalMinimum(tracks, cfg)
+	initialFitness := calculateFitness(tracks, cfg)
 
 	fmt.Println("\nOptimizing playlist... (press Ctrl+C to stop early, or wait up to 1 hour)")
 	fmt.Printf("Initial fitness: %.10f\n", initialFitness)
@@ -249,12 +250,12 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, config *Shared
 	// Start GA in goroutine
 	var bestIndividual []playlist.Track
 	done := make(chan []playlist.Track)
-	progress := &progressTracker{
+	progress := &Tracker{
 		updateChan:   updateChan,
 		sharedConfig: config,
 		lastGenTime:  startTime,
 	}
-	defer progress.close()
+	defer progress.Close()
 	go func() {
 		result := geneticSort(ctx, tracks, config, progress)
 		done <- result
