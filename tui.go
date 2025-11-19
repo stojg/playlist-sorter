@@ -488,6 +488,14 @@ func RunTUI(playlistPath string) error {
 		return fmt.Errorf("failed to load playlist: %w", err)
 	}
 
+	// Handle edge cases
+	if len(tracks) == 0 {
+		return fmt.Errorf("playlist is empty, nothing to optimize")
+	}
+	if len(tracks) == 1 {
+		return fmt.Errorf("playlist has only one track, nothing to optimize")
+	}
+
 	// Assign Index values to tracks before any concurrent access
 	for i := range tracks {
 		tracks[i].Index = i

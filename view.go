@@ -151,6 +151,11 @@ func RunViewMode(playlistPath string) error {
 		return fmt.Errorf("failed to load playlist: %w", err)
 	}
 
+	// Handle edge cases
+	if len(tracks) == 0 {
+		return fmt.Errorf("playlist is empty, nothing to view")
+	}
+
 	// Assign Index values to tracks
 	for i := range tracks {
 		tracks[i].Index = i

@@ -88,6 +88,17 @@ func main() {
 		log.Fatalf("Failed to load playlist: %v", err)
 	}
 
+	// Handle edge cases
+	if len(tracks) == 0 {
+		fmt.Println("Playlist is empty, nothing to optimize")
+		return
+	}
+
+	if len(tracks) == 1 {
+		fmt.Println("Playlist has only one track, nothing to optimize")
+		return
+	}
+
 	// Assign Index values to tracks before any concurrent access
 	for i := range tracks {
 		tracks[i].Index = i
