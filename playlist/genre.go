@@ -17,11 +17,11 @@ var genreHierarchy = map[string]string{
 	"jungle":                    "drum and bass", // Related to DnB
 
 	// DJ House family
-	"dj electro house": "dj house",
-	"dj house":         "house",
-	"electro house":    "house",
+	"dj electro house":  "dj house",
+	"dj house":          "house",
+	"electro house":     "house",
 	"progressive house": "house",
-	"house":            "electronic",
+	"house":             "electronic",
 
 	// DJ Dubstep
 	"dj dubstep": "electronic",
@@ -63,20 +63,20 @@ var genreHierarchy = map[string]string{
 	"industrial":   "rock",
 
 	// Hip Hop family
-	"hiphop":           "hip hop",
-	"hip-hop":          "hip hop",
-	"hip-hop-rap":      "hip hop",
-	"rap":              "hip hop",
-	"alternative rap":  "hip hop",
-	"old school rap":   "hip hop",
-	"svensk hiphop":    "hip hop",
+	"hiphop":          "hip hop",
+	"hip-hop":         "hip hop",
+	"hip-hop-rap":     "hip hop",
+	"rap":             "hip hop",
+	"alternative rap": "hip hop",
+	"old school rap":  "hip hop",
+	"svensk hiphop":   "hip hop",
 
 	// Jazz family
 	"acid jazz funk": "jazz",
 	"fusion":         "jazz",
 
 	// Funk/Soul family
-	"funk":      "funk / soul",
+	"funk":        "funk / soul",
 	"funk / soul": "",
 
 	// Reggae family

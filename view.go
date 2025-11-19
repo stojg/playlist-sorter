@@ -27,10 +27,10 @@ type viewModel struct {
 	lastReload   time.Time
 	errorMsg     string
 	ready        bool
-	cursorPos    int                // Currently selected track index
-	undoStack    []playlistState    // Undo history (max 50)
-	redoStack    []playlistState    // Redo history
-	modified     bool               // Tracks unsaved changes
+	cursorPos    int             // Currently selected track index
+	undoStack    []playlistState // Undo history (max 50)
+	redoStack    []playlistState // Redo history
+	modified     bool            // Tracks unsaved changes
 }
 
 // playlistState represents a snapshot of the playlist for undo/redo

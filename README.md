@@ -1,39 +1,44 @@
 # Playlist Sorter
 
-A high-performance genetic algorithm-based playlist optimizer that sorts M3U8 playlists using harmonic mixing principles, energy flow optimization, and BPM compatibility analysis.
+A genetic algorithm-based playlist optimizer that sorts M3U8 playlists using harmonic mixing, energy flow, and BPM compatibility.
 
 ## Overview
 
-This tool optimizes music playlists by minimizing:
-- **Harmonic distance** between adjacent tracks using the Camelot wheel
-- **Artist/album repetition** with configurable penalties
-- **Energy level jumps** for smooth listening flow
-- **BPM mismatches** accounting for half/double time mixing (common in electronic music)
-- **Position bias** favoring low-energy tracks at the start of playlists
+Optimizes music playlists by minimizing:
+- Harmonic distance between adjacent tracks (Camelot wheel)
+- Artist/album repetition with configurable penalties
+- Energy level jumps for smooth listening flow
+- BPM mismatches accounting for half/double time mixing
+- Position bias favoring low-energy tracks at the start
 
-Uses a genetic algorithm with Edge Recombination Crossover (ERC) to preserve good track transitions, combined with 2-opt local search for polishing elite solutions.
+Uses a genetic algorithm with Order Crossover (OX) for exploration combined with 2-opt local search for exploitation.
 
 ## Features
 
-- **Genetic Algorithm** with tournament selection, elitism, and immigration
-- **Edge Recombination Crossover (ERC)** - preserves adjacency from parent solutions
-- **2-opt Local Search** - polish top solutions with delta evaluation
-- **Metadata Extraction** - reads BPM, key, energy, and artist/album from audio files
-- **Camelot Wheel** - harmonic mixing compatibility
-- **Configurable Parameters** - tune fitness weights for different genres
+- Genetic algorithm with tournament selection, elitism, and immigration
+- Order Crossover (OX) for preserving relative ordering from parents
+- 2-opt local search with delta evaluation for polishing elite solutions
+- Interactive TUI mode with live parameter tuning
+- Metadata extraction from audio files (ID3 tags via beets database)
+- Normalized fitness components for equal weight influence
+- Configurable genre clustering/spreading (signed weight)
 
 ## Installation
 
 ### Prerequisites
 
-- Go 1.24+ (uses new `tool` directive)
-- Music files with metadata (ID3 tags)
-- Audio files accessible at `/Volumes/music/Music/` (or modify path in code)
+- Go 1.25+ (uses `math/rand/v2`)
+- Music files with ID3 metadata (Artist, Album, Title, BPM)
+- Comment field formatted as: `"8A - Energy 6"` (Camelot key and energy level)
 
 ### Build
 
 ```bash
-go build -o playlist-sorter
+# Production build (optimized with PGO)
+make all
+
+# Development build (with race detector and debug info)
+make dev
 ```
 
 ## Usage
@@ -41,273 +46,229 @@ go build -o playlist-sorter
 ### Basic Usage
 
 ```bash
-# Sort a playlist
+# Sort a playlist (overwrites file with optimized ordering)
 ./playlist-sorter path/to/playlist.m3u8
 
-# The playlist file will be overwritten with optimized ordering
-# Press Ctrl+C to stop early (returns best solution found so far)
+# Press Ctrl+C to stop early and use best solution found
 ```
 
-### With Profiling
+### Interactive Mode
+
+```bash
+# Live parameter tuning with visual feedback
+./playlist-sorter --visual path/to/playlist.m3u8
+```
+
+### View Mode
+
+```bash
+# Watch optimization progress in real-time (read-only)
+./playlist-sorter --view path/to/playlist.m3u8
+```
+
+### Profiling
 
 ```bash
 # CPU profiling
 ./playlist-sorter -cpuprofile=cpu.prof playlist.m3u8
-go tool pprof cpu.prof
+go tool pprof -http=:8080 cpu.prof
 
 # Memory profiling
 ./playlist-sorter -memprofile=mem.prof playlist.m3u8
 go tool pprof mem.prof
 ```
 
-### Expected Output
-
-```
-Reading playlist: morning_chill_dnb.m3u8
-Loading metadata for 52 tracks...
-[+] Processed 10/52 tracks...
-[+] Processed 20/52 tracks...
-[+] Processed 30/52 tracks...
-[+] Processed 40/52 tracks...
-[+] Processed 50/52 tracks...
-[_] Loaded metadata for 52 tracks
-
-Optimizing playlist... (press Ctrl+C to stop early, or wait up to 1 hour)
-0s Gen 0 - fitness: 336.75
-1s Gen 45 - fitness: 298.42
-3s Gen 123 - fitness: 267.89
-...
-```
-
 ## Project Structure
 
 ```
 playlist-sorter/
-├── main.go                   # GA implementation and entry point
+├── main.go                   # CLI entry point and view mode
+├── ga.go                     # Genetic algorithm core
+├── config.go                 # Configuration management
+├── tui.go                    # Interactive TUI mode
+├── view.go                   # Read-only view mode
 ├── playlist/
-│   ├── track.go             # Track metadata extraction from audio files
-│   ├── playlist.go          # M3U8 read/write functions
-│   └── harmonic.go          # Camelot wheel harmonic mixing utilities
-├── go.mod                    # Go module with tool dependencies
+│   ├── track.go             # Track metadata extraction
+│   ├── playlist.go          # M3U8 read/write
+│   └── harmonic.go          # Camelot wheel utilities
+├── go.mod                    # Module with tool dependencies
 ├── .golangci.yml            # Linter configuration
-├── CLAUDE.md                # Developer documentation
 └── README.md                # This file
 ```
 
-## Algorithm Details
+## Algorithm
 
 ### Genetic Algorithm
 
-**Population**: 
-**Selection**: Tournament selection (size 3) with top 2 elitism
-**Crossover**: Edge Recombination Crossover (ERC)
-**Mutation**: 20% rate - 50/50 split between swap (2-5 tracks) and inversion
-**Immigration**: 5% random individuals per generation for diversity
-**Local Search**: 2-opt improvement on top 10% of population
-**Timeout**: 1 hour maximum (or Ctrl+C)
+- Population size: 100
+- Selection: Tournament selection (size 3) with top 2 elitism
+- Crossover: Order Crossover (OX)
+- Mutation: Adaptive rate (10-30%), 50/50 swap/inversion
+- Immigration: 15% per generation (mutated copies of best)
+- Local search: 2-opt on top 3% starting at generation 50, then every 100 generations
+- Timeout: 1 hour maximum
 
 ### Fitness Function
 
-Minimizes (lower = better):
+All components normalized to [0,1] scale before applying weights for equal influence:
 
-```go
-fitness = Σ(harmonic_distance)
-        + same_artist_penalty * 5.0
-        + same_album_penalty * 2.0
-        + energy_delta * 3.0
-        + bpm_delta * 0.25
-        + position_bias_penalty
+```
+fitness = harmonic_distance
+        + same_artist_penalty
+        + same_album_penalty
+        + energy_delta
+        + bpm_delta
+        + position_bias
+        + genre_change  (optional, signed)
 ```
 
-**Position Bias**: First 20% of playlist biased toward low-energy tracks (weight 10.0, linear decay)
-
-**BPM Matching**: Considers half-time and double-time (0.5x, 1x, 2x multipliers)
+Default weights (configurable via TUI or config file):
+- Harmonic: 0.5
+- Energy delta: 0.5
+- BPM delta: 0.5
+- Same artist: 0.5
+- Same album: 0.5
+- Genre: 0.0 (disabled by default, -1.0 = spread, +1.0 = cluster)
+- Position bias: 0.0 (disabled by default)
 
 ### Harmonic Distance (Camelot Wheel)
 
-- **0** = Same key (perfect match)
-- **1** = ±1 semitone with same mode OR relative major/minor (excellent)
-- **3** = ±1 semitone with different mode (acceptable)
-- **Higher** = Less compatible
+Based on Camelot wheel mixing principles:
+- 0 = Same key (perfect)
+- 1 = Adjacent key or relative major/minor (excellent)
+- 2 = Parallel major/minor (dramatic shift, advanced)
+- 10 = Undocumented transition (not a recognized mixing technique)
 
-Compatible transitions: `8A → {8A, 8B, 7A, 9A, 7B, 9B}`
+### BPM Matching
+
+Considers half-time and double-time mixing (0.5x, 1x, 2x multipliers) to find minimum BPM distance.
 
 ## Performance
 
-After optimization through profiling:
-- **54+ generations/second** on 52-track playlist
-- **2.33x speedup** vs initial implementation
+Optimizations through profiling (52-track playlist):
+- 2,200+ generations in 5 seconds
 - Key optimizations:
+  - `math/rand/v2` for 12% sequential speedup
+  - `Uint32()&1` for 23% faster coin flips
   - Delta evaluation for 2-opt (only recalculates changed segments)
-  - Inline comparisons instead of `math.Min()` in hot paths
   - Pre-parsed Camelot keys (parse once, lookup many times)
-  - Double-buffered population arrays (minimize allocations)
-
-## Development
-
-### Code Quality Tools
-
-This project uses Go 1.24+'s `tool` directive for development tools:
-
-```bash
-# Lint the code
-go tool golangci-lint run
-
-# Check for security vulnerabilities
-go tool govulncheck ./...
-
-# Run tests with better output
-go tool gotestsum --format testname
-
-# List all available tools
-go tool
-```
-
-### Adding Development Tools
-
-```bash
-# Add a tool
-go get -tool github.com/example/tool/cmd/tool@latest
-
-# Run the tool
-go tool tool [args]
-```
-
-### Pre-commit Checklist
-
-1. Format: `go fmt ./...`
-2. Lint: `go tool golangci-lint run`
-3. Vulnerabilities: `go tool govulncheck ./...`
-4. Build: `go build`
-5. Test: `go test ./...` (when tests exist)
-
-### Profiling Workflow
-
-1. Run with profiling: `./playlist-sorter -cpuprofile=cpu.prof playlist.m3u8`
-2. Analyze: `go tool pprof -http=:8080 cpu.prof`
-3. **Focus on percentages, not absolute time** (system load varies)
-4. Look for functions taking >10% of time
+  - Generation buffer swapping (minimize allocations)
 
 ## Configuration
 
-### Tuning Parameters
+Config stored in `~/.config/playlist-sorter/config.toml`. Edit via TUI (--visual) or manually.
 
-Edit constants in `main.go` to tune for your use case:
+### Metadata Requirements
 
-```go
-// Genetic algorithm parameters
-populationSize       = 100    // Number of candidates per generation
-mutationRate         = 0.2    // 20% mutation rate (research-backed optimal)
-immigrationRate      = 0.05   // 5% random immigration per generation
-lowEnergyBiasPortion = 0.2    // Bias first 20% of playlist
-lowEnergyBiasWeight  = 10.0   // Weight for energy position penalty
+Tracks must have:
+- Artist, Album, Title (standard ID3 tags)
+- BPM (custom tag: `BPM`, `TBPM`, `bpm`, or `tempo`)
+- Comments field: `"8A - Energy 6"` (Camelot key + energy level 1-10)
 
-// Fitness penalty weights
-sameArtistPenalty = 5.0   // Penalty for consecutive same artist
-sameAlbumPenalty  = 2.0   // Penalty for consecutive same album
-energyDeltaWeight = 3.0   // Weight for energy changes
-bpmDeltaWeight    = 0.25  // Weight for BPM differences (lower = less strict)
+## Development
 
-// Selection parameters
-tournamentSize   = 3    // Tournament selection pool size
-elitePercentage  = 0.1  // Top 10% get 2-opt local search
+### Build Modes
+
+**Development** (with race detector and debug symbols):
+```bash
+make dev
+./playlist-sorter-dev playlist.m3u8
 ```
 
-**Genre-specific tuning**:
-- **Drum & Bass**: Current settings work well (BPM weight 0.25, energy weight 3.0)
-- **House/Techno**: Increase `bpmDeltaWeight` to 0.5 for stricter tempo matching
-- **Ambient**: Decrease `energyDeltaWeight` to 1.0 for more variety
-- **Hip Hop**: Increase `sameArtistPenalty` to 10.0 to avoid artist clustering
+**Production** (PGO-optimized and stripped):
+```bash
+make all  # Collects PGO profile, builds, and installs
+```
 
-### Metadata Format
+### Race Detector
 
-Tracks must have metadata embedded in audio files:
+Always use race detector during development to catch concurrency bugs:
+```bash
+# Development builds include -race by default
+make dev
 
-**Required Tags**:
-- Artist (standard ID3 tag)
-- Album (standard ID3 tag)
-- Title (standard ID3 tag)
+# Or manually
+go build -race -o playlist-sorter-dev
 
-**Optional Tags**:
-- BPM (custom tag: `BPM`, `TBPM`, `bpm`, or `tempo`)
-- Comments field with format: `"8A - Energy 6"` (Camelot key + energy level)
+# Run with race detection
+./playlist-sorter-dev playlist.m3u8
+```
 
-## API Reference
+### Code Quality Tools
 
-### Track Struct
+Using Go 1.25+ tool directive:
+
+```bash
+# Lint
+make lint
+# or: go tool golangci-lint run
+
+# Format
+go fmt ./...
+
+# Security check
+go tool govulncheck ./...
+```
+
+### Pre-commit
+
+1. Format: `go fmt ./...`
+2. Lint: `make lint`
+3. Build: `make dev`
+4. Test: Run on a playlist with race detector
+
+### Profiling
+
+Focus on percentages (>10% of time), not absolute values. System load affects absolute timing.
+
+## API
+
+### Track
 
 ```go
 type Track struct {
-    Path      string      // Relative path in playlist
+    Path      string      // Relative path
     Key       string      // Camelot key (e.g., "8A")
-    ParsedKey *CamelotKey // Pre-parsed for fast lookups
+    ParsedKey *CamelotKey // Pre-parsed for O(1) lookups
     Artist    string
     Album     string
     Title     string
-    Energy    int         // 1-10 (0 if not available)
-    BPM       float64     // Beats per minute (0 if not available)
+    Genre     string
+    Energy    int         // 1-10 (0 if unavailable)
+    BPM       float64     // 0 if unavailable
+    Index     int         // Original position
 }
 ```
 
-### Playlist Functions
+### Functions
 
 ```go
-// Load playlist with metadata from audio files
-tracks, err := playlist.LoadPlaylistWithMetadata("/path/to/playlist.m3u8")
+// Load playlist with metadata from beets
+tracks, err := playlist.LoadPlaylistWithMetadata(path, verbose)
 
-// Write sorted tracks back to playlist
-err := playlist.WritePlaylist("/path/to/playlist.m3u8", sortedTracks)
-```
+// Write sorted tracks back
+err := playlist.WritePlaylist(path, tracks)
 
-### Harmonic Functions
+// Harmonic distance (0 = best)
+distance := playlist.HarmonicDistance("8A", "9A")  // 1
 
-```go
-// Calculate harmonic distance between keys (0 = best)
-distance := playlist.HarmonicDistance("8A", "9A")  // Returns: 1
-
-// Check compatibility (distance <= 2)
-compatible := playlist.IsCompatible("8A", "7B")    // Returns: true
-
-// Get all compatible keys for mixing
-keys := playlist.GetCompatibleKeys("8A")
-// Returns: ["8A", "8B", "7A", "9A", "7B", "9B"]
-
-// Parse key for fast lookups
-key, err := playlist.ParseCamelotKey("8A")
-
-// Fast distance calculation with pre-parsed keys
+// Pre-parsed for speed
+key, _ := playlist.ParseCamelotKey("8A")
 distance := playlist.HarmonicDistanceParsed(key1, key2)
 ```
 
 ## Known Issues
 
-- **G304 gosec warnings**: False positives for file I/O operations (expected for CLI tool)
-- **No unit tests**: Future work - see `CLAUDE.md` for testing strategy
+- G304 gosec warnings: False positives (CLI tool requires file I/O)
+- No unit tests yet
 
 ## Future Work
 
-- [ ] Add unit tests for core algorithms
-- [ ] Parallel fitness evaluation for large playlists
-- [ ] Genre-specific BPM mixing rules
-- [ ] Support for additional metadata sources (MusicBrainz API, etc.)
-- [ ] Web UI for visualization and manual tweaking
-- [ ] A/B testing framework for algorithm improvements
-
-## Contributing
-
-See `CLAUDE.md` for detailed development documentation including:
-- Architecture deep dive
-- Performance optimization notes
-- Code quality standards
-- Profiling best practices
-- Go 1.24+ tool directive usage
-
-## License
-
-This project is part of a personal music library management system.
+- Unit tests for core algorithms
+- Parallel fitness evaluation for larger playlists
+- Genre-specific BPM mixing rules
 
 ## Related
 
 - [beets](https://beets.io/) - Music library manager
-- [Camelot Wheel](https://mixedinkey.com/harmonic-mixing-guide/) - Harmonic mixing system
-- [Mixed In Key](https://mixedinkey.com/) - Commercial DJ key detection software
+- [Camelot Wheel](https://mixedinkey.com/harmonic-mixing-guide/) - Harmonic mixing guide

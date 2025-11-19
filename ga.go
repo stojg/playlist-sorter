@@ -708,8 +708,9 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 //  5. Repeat until no improvements are found (local optimum reached)
 //
 // Example: Playlist [A, B, C, D, E] with i=1, j=3
-//   Before: A, [B, C, D], E
-//   After:  A, [D, C, B], E  (reversed middle segment)
+//
+//	Before: A, [B, C, D], E
+//	After:  A, [D, C, B], E  (reversed middle segment)
 //
 // Performance optimizations:
 //   - Delta evaluation: Only recalculates fitness for the changed segment [i:endPos]
@@ -721,16 +722,18 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 //   - Safety limit (1000 iterations): Guards against infinite loops from numerical issues.
 //
 // Usage in GA:
-//   Applied to elite solutions (top 3% of population) periodically during evolution:
-//     - First applied at generation 50
-//     - Then every 100 generations thereafter
-//   This balances exploration (GA) with exploitation (local search).
+//
+//	Applied to elite solutions (top 3% of population) periodically during evolution:
+//	  - First applied at generation 50
+//	  - Then every 100 generations thereafter
+//	This balances exploration (GA) with exploitation (local search).
 //
 // Effectiveness:
-//   2-opt is particularly effective for playlist optimization because:
-//     - Track orderings have strong locality (nearby tracks influence each other's fitness)
-//     - Reversing segments can fix "crossed" transitions (e.g., 8A→5A→9A becomes 8A→9A→5A)
-//     - Complementary to crossover/mutation which provide global exploration
+//
+//	2-opt is particularly effective for playlist optimization because:
+//	  - Track orderings have strong locality (nearby tracks influence each other's fitness)
+//	  - Reversing segments can fix "crossed" transitions (e.g., 8A→5A→9A becomes 8A→9A→5A)
+//	  - Complementary to crossover/mutation which provide global exploration
 //
 // Time complexity: O(n²) per iteration, where n = playlist length
 // Space complexity: O(n) for don't-look bits

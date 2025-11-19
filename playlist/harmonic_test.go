@@ -12,18 +12,18 @@ func TestIsParallelMajorMinor(t *testing.T) {
 		minor string // A (minor key)
 		major string // B (major key)
 	}{
-		{"1A", "4B"},   // Ab minor ↔ Ab major
-		{"2A", "5B"},   // Eb minor ↔ Eb major
-		{"3A", "6B"},   // Bb minor ↔ Bb major
-		{"4A", "7B"},   // F minor ↔ F major
-		{"5A", "8B"},   // C minor ↔ C major
-		{"6A", "9B"},   // G minor ↔ G major
-		{"7A", "10B"},  // D minor ↔ D major
-		{"8A", "11B"},  // A minor ↔ A major
-		{"9A", "12B"},  // E minor ↔ E major
-		{"10A", "1B"},  // B minor ↔ B major
-		{"11A", "2B"},  // F# minor ↔ F# major
-		{"12A", "3B"},  // Db minor ↔ Db major
+		{"1A", "4B"},  // Ab minor ↔ Ab major
+		{"2A", "5B"},  // Eb minor ↔ Eb major
+		{"3A", "6B"},  // Bb minor ↔ Bb major
+		{"4A", "7B"},  // F minor ↔ F major
+		{"5A", "8B"},  // C minor ↔ C major
+		{"6A", "9B"},  // G minor ↔ G major
+		{"7A", "10B"}, // D minor ↔ D major
+		{"8A", "11B"}, // A minor ↔ A major
+		{"9A", "12B"}, // E minor ↔ E major
+		{"10A", "1B"}, // B minor ↔ B major
+		{"11A", "2B"}, // F# minor ↔ F# major
+		{"12A", "3B"}, // Db minor ↔ Db major
 	}
 
 	for _, pair := range parallelPairs {
@@ -95,10 +95,10 @@ func TestHarmonicDistanceParsed_ParallelMajorMinor(t *testing.T) {
 		{"12A", "3B", 2}, // Db minor ↔ Db major
 
 		// Documented good transitions
-		{"8A", "8B", 1},  // Relative major/minor (same number)
-		{"8A", "9A", 1},  // Adjacent same letter
-		{"8A", "7A", 1},  // Adjacent same letter
-		{"8A", "8A", 0},  // Same key
+		{"8A", "8B", 1}, // Relative major/minor (same number)
+		{"8A", "9A", 1}, // Adjacent same letter
+		{"8A", "7A", 1}, // Adjacent same letter
+		{"8A", "8A", 0}, // Same key
 
 		// Undocumented transitions - all equally bad (distance 10)
 		{"8A", "9B", 10},  // Adjacent different letter

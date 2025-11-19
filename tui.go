@@ -92,29 +92,29 @@ var keys = keyMap{
 // Styles
 var (
 	titleStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("12"))
+			Bold(true).
+			Foreground(lipgloss.Color("12"))
 
 	paramStyle = lipgloss.NewStyle().
-		Padding(0, 1)
+			Padding(0, 1)
 
 	selectedParamStyle = lipgloss.NewStyle().
-		Background(lipgloss.Color("240")).
-		Foreground(lipgloss.Color("15")).
-		Bold(true).
-		Padding(0, 1)
+				Background(lipgloss.Color("240")).
+				Foreground(lipgloss.Color("15")).
+				Bold(true).
+				Padding(0, 1)
 
 	playlistHeaderStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("10"))
+				Bold(true).
+				Foreground(lipgloss.Color("10"))
 
 	statusStyle = lipgloss.NewStyle().
-		Background(lipgloss.Color("236")).
-		Foreground(lipgloss.Color("15")).
-		Padding(0, 1)
+			Background(lipgloss.Color("236")).
+			Foreground(lipgloss.Color("15")).
+			Padding(0, 1)
 
 	helpStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241"))
+			Foreground(lipgloss.Color("241"))
 )
 
 // initModel creates the initial model
@@ -469,6 +469,7 @@ func (m model) renderBreakdown() string {
 	)
 	return helpStyle.Render(breakdown)
 }
+
 // renderHelp renders the help text
 func (m model) renderHelp() string {
 	return helpStyle.Render(" ↑/↓: select param | ←/→: adjust value | d: reset defaults | q: quit & save")

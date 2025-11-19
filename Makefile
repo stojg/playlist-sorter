@@ -1,7 +1,7 @@
 # ABOUTME: Build automation for playlist-sorter with PGO and optimization
 # ABOUTME: Handles profile collection, production builds, and installation
 
-.PHONY: help dev profile-collect build-release install clean test lint all
+.PHONY: help dev profile-collect build-release install clean test lint vuln fmt all check
 
 # Default target
 .DEFAULT_GOAL := help
@@ -26,8 +26,11 @@ help:
 	@echo ""
 	@echo "$(YELLOW)Development:$(NC)"
 	@echo "  make dev              Build development binary (with debug info, race detector)"
-	@echo "  make test             Run tests"
+	@echo "  make check            Run all checks (fmt + lint + vuln)"
+	@echo "  make fmt              Format code"
 	@echo "  make lint             Run linter"
+	@echo "  make vuln             Check for security vulnerabilities"
+	@echo "  make test             Run tests"
 	@echo ""
 	@echo "$(YELLOW)Production:$(NC)"
 	@echo "  make profile-collect  Collect PGO profile (30s run on $(PROFILE_PLAYLIST))"
@@ -105,8 +108,27 @@ test:
 ## lint: Run linter
 lint:
 	@echo "$(GREEN)[LINT]$(NC) Running golangci-lint..."
-	go tool golangci-lint run
+	@go tool golangci-lint run
 	@echo "$(GREEN)✓$(NC) Lint passed"
+
+## vuln: Check for security vulnerabilities
+vuln:
+	@echo "$(GREEN)[VULN]$(NC) Checking for security vulnerabilities..."
+	@go tool govulncheck ./...
+	@echo "$(GREEN)✓$(NC) No vulnerabilities in used code"
+
+## fmt: Format code
+fmt:
+	@echo "$(GREEN)[FMT]$(NC) Formatting code..."
+	@go fmt ./...
+	@echo "$(GREEN)✓$(NC) Code formatted"
+
+## check: Run all code quality checks (fmt + lint + vuln)
+check: fmt lint vuln
+	@echo ""
+	@echo "$(GREEN)═══════════════════════════════════════════$(NC)"
+	@echo "$(GREEN)✓ All checks passed!$(NC)"
+	@echo "$(GREEN)═══════════════════════════════════════════$(NC)"
 
 ## stats: Show binary size comparison
 stats:
