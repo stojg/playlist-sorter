@@ -84,6 +84,7 @@ type SharedConfig struct {
 func (sc *SharedConfig) Get() config.GAConfig {
 	sc.mu.RLock()
 	defer sc.mu.RUnlock()
+
 	return sc.config
 }
 
@@ -150,7 +151,6 @@ var (
 // - Position bias (prefers low-energy tracks at start of playlist)
 // - Genre changes (optional, signed weight: positive=cluster, negative=spread)
 func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *SharedConfig, progress *Tracker) []playlist.Track {
-
 	var (
 		startTime = time.Now()
 		gen       = 0
@@ -177,7 +177,7 @@ func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *Sha
 
 	// Pre-allocate all nextGen buffers
 	nextGen := make([][]playlist.Track, populationSize)
-	for i := 0; i < populationSize; i++ {
+	for i := range populationSize {
 		nextGen[i] = make([]playlist.Track, genesLen)
 	}
 
@@ -212,7 +212,6 @@ func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *Sha
 	// main loop
 loop:
 	for {
-
 		select {
 		case <-ctx.Done():
 			break loop
@@ -248,7 +247,7 @@ loop:
 				topCount = 2
 			}
 			debugf("[GA] Starting 2-opt for gen %d (topCount=%d)", gen, topCount)
-			for i := 0; i < topCount; i++ {
+			for i := range topCount {
 				workerPool.Submit(func() {
 					twoOptImprove(scoredPopulation[i].Genes, config)
 				})
@@ -281,12 +280,12 @@ loop:
 			immigrantSwaps = 3
 		}
 
-		for i := 0; i < immigrantCount; i++ {
+		for i := range immigrantCount {
 			worstIdx := len(scoredPopulation) - 1 - i
 			// Copy genes from the best individual
 			copy(scoredPopulation[worstIdx].Genes, scoredPopulation[0].Genes)
 			// Apply random swaps to create variation
-			for s := 0; s < immigrantSwaps; s++ {
+			for range immigrantSwaps {
 				a := rand.IntN(genesLen)
 				b := rand.IntN(genesLen)
 				scoredPopulation[worstIdx].Genes[a], scoredPopulation[worstIdx].Genes[b] = scoredPopulation[worstIdx].Genes[b], scoredPopulation[worstIdx].Genes[a]
@@ -348,7 +347,7 @@ loop:
 					// Swap mutation: randomly swap 2-5 pairs of tracks
 					// Good for small local changes and escaping local optima
 					numSwaps := minSwapMutations + rand.IntN(maxSwapMutations-minSwapMutations+1)
-					for s := 0; s < numSwaps; s++ {
+					for range numSwaps {
 						a := rand.IntN(genesLen)
 						b := rand.IntN(genesLen)
 						nextGen[i][a], nextGen[i][b] = nextGen[i][b], nextGen[i][a]
@@ -393,8 +392,8 @@ func buildEdgeFitnessCache(tracks []playlist.Track) {
 		}
 
 		// Pre-calculate base values for all track pairs
-		for i := 0; i < n; i++ {
-			for j := 0; j < n; j++ {
+		for i := range n {
+			for j := range n {
 				if i == j {
 					continue // Skip self-edges
 				}
@@ -413,21 +412,27 @@ func buildEdgeFitnessCache(tracks []playlist.Track) {
 
 				// BPM delta (base value, accounting for half/double time)
 				bpmDelta := 0.0
+
 				if t1.BPM > 0 && t2.BPM > 0 {
 					bpm1, bpm2 := t1.BPM, t2.BPM
 					minBPMDistance := math.Abs(bpm1 - bpm2)
+
 					if d := math.Abs(bpm1*0.5 - bpm2); d < minBPMDistance {
 						minBPMDistance = d
 					}
+
 					if d := math.Abs(bpm1 - bpm2*0.5); d < minBPMDistance {
 						minBPMDistance = d
 					}
+
 					if d := math.Abs(bpm1*2.0 - bpm2); d < minBPMDistance {
 						minBPMDistance = d
 					}
+
 					if d := math.Abs(bpm1 - bpm2*2.0); d < minBPMDistance {
 						minBPMDistance = d
 					}
+
 					bpmDelta = minBPMDistance
 				}
 
@@ -455,22 +460,26 @@ func buildEdgeFitnessCache(tracks []playlist.Track) {
 
 		// Calculate max energy delta from actual track data
 		minEnergy, maxEnergy := float64(tracks[0].Energy), float64(tracks[0].Energy)
+
 		for i := 1; i < n; i++ {
 			e := float64(tracks[i].Energy)
 			if e < minEnergy {
 				minEnergy = e
 			}
+
 			if e > maxEnergy {
 				maxEnergy = e
 			}
 		}
+
 		normalizers.MaxEnergyDelta = (maxEnergy - minEnergy) * float64(n-1)
 
 		// Calculate max BPM delta from actual track data
 		// Find the maximum BPM distance considering half/double time matching
 		maxBPMDist := 0.0
-		for i := 0; i < n; i++ {
-			for j := 0; j < n; j++ {
+
+		for i := range n {
+			for j := range n {
 				if i != j && tracks[i].BPM > 0 && tracks[j].BPM > 0 {
 					if edgeDataCache[i][j].BPMDelta > maxBPMDist {
 						maxBPMDist = edgeDataCache[i][j].BPMDelta
@@ -478,6 +487,7 @@ func buildEdgeFitnessCache(tracks []playlist.Track) {
 				}
 			}
 		}
+
 		normalizers.MaxBPMDelta = maxBPMDist * float64(n-1)
 
 		// Calculate max genre change: worst case is all transitions are completely different (1.0)
@@ -493,6 +503,7 @@ func buildEdgeFitnessCache(tracks []playlist.Track) {
 // calculateFitness computes the fitness score for a given playlist ordering
 func calculateFitness(individual []playlist.Track, config config.GAConfig) float64 {
 	breakdown := calculateFitnessWithBreakdown(individual, config)
+
 	return breakdown.Total
 }
 
@@ -519,6 +530,7 @@ func orderCrossover(dst, parent1, parent2 []playlist.Track, present map[string]b
 	// Select two random cut points
 	cut1 := rand.IntN(numTracks)
 	cut2 := rand.IntN(numTracks)
+
 	if cut1 > cut2 {
 		cut1, cut2 = cut2, cut1
 	}
@@ -531,7 +543,8 @@ func orderCrossover(dst, parent1, parent2 []playlist.Track, present map[string]b
 
 	// Fill remaining positions with tracks from parent2 in order
 	dstIdx := (cut2 + 1) % numTracks
-	for i := 0; i < numTracks; i++ {
+
+	for i := range numTracks {
 		parent2Idx := (cut2 + 1 + i) % numTracks
 		if !present[parent2[parent2Idx].Path] {
 			dst[dstIdx] = parent2[parent2Idx]
@@ -593,6 +606,7 @@ func twoOptImprove(tracks []playlist.Track, config config.GAConfig) {
 
 	// Safety limit to prevent infinite loops from floating point issues
 	const maxIterations = 1000
+
 	iteration := 0
 
 	// Keep iterating until no more improvements found
@@ -602,10 +616,11 @@ func twoOptImprove(tracks []playlist.Track, config config.GAConfig) {
 		iteration++
 
 		// For each position i in the playlist (but the last)
-		for i := 0; i < n-1; i++ {
+		for i := range n - 1 {
 			if positionsExhausted[i] {
 				continue
 			}
+
 			positionImproved := false
 
 			// and for each position after i (but before the end)
@@ -628,6 +643,7 @@ func twoOptImprove(tracks []playlist.Track, config config.GAConfig) {
 				// If no improvement, undo the reversal and try next segment
 				if !hasFitnessImproved(newFitness, currentFitness, floatingPointEpsilon) {
 					reverseSegment(tracks, i, j)
+
 					continue
 				}
 
@@ -635,6 +651,7 @@ func twoOptImprove(tracks []playlist.Track, config config.GAConfig) {
 				currentFitness = newFitness
 				improved = true
 				positionImproved = true
+
 				clear(positionsExhausted)
 			}
 
@@ -659,12 +676,16 @@ func segmentFitness(tracks []playlist.Track, start, end int, config config.GACon
 // segmentFitnessWithBreakdown calculates fitness and returns breakdown of components
 func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config config.GAConfig) FitnessBreakdown {
 	var breakdown FitnessBreakdown
+
 	biasThreshold := int(float64(len(tracks)) * config.LowEnergyBiasPortion)
 	// Precompute genre-related values to avoid repeated checks and calculations
 	genreEnabled := config.GenreWeight != 0 && normalizers.MaxGenreChange > 0
+
 	var genreAbsWeight, genreSign float64
+
 	if genreEnabled {
 		genreAbsWeight = math.Abs(config.GenreWeight) / normalizers.MaxGenreChange
+
 		if config.GenreWeight > 0 {
 			genreSign = 1.0
 		} else {
@@ -675,7 +696,7 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 	// Calculate fitness for the segment [start:end+1]
 	for j := start; j <= end; j++ {
 		// Add edge fitness with current weights
-		if j > 0 {
+		if j > 0 { //nolint:nestif
 			// Use pre-assigned Index values for O(1) cache lookup
 			idx1 := tracks[j-1].Index
 			idx2 := tracks[j].Index
@@ -688,6 +709,7 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 			if edge.SameArtist {
 				breakdown.SameArtist += applyWeightedPenalty(1.0, normalizers.MaxSameArtist, config.SameArtistPenalty)
 			}
+
 			if edge.SameAlbum {
 				breakdown.SameAlbum += applyWeightedPenalty(1.0, normalizers.MaxSameAlbum, config.SameAlbumPenalty)
 			}
@@ -704,6 +726,7 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 				if genreSign < 0 {
 					rawPenalty = 1.0 - rawPenalty
 				}
+
 				breakdown.GenreChange += rawPenalty * genreAbsWeight
 			}
 		}
@@ -729,6 +752,7 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 // This ensures all penalty components have equal influence when weights are equal
 func applyWeightedPenalty(rawValue, maxValue, weight float64) float64 {
 	normalized := rawValue / maxValue
+
 	return normalized * weight
 }
 
@@ -764,27 +788,34 @@ func calculateTheoreticalMinimum(tracks []playlist.Track, config config.GAConfig
 	for i, t := range tracks {
 		energies[i] = t.Energy
 	}
+
 	slices.Sort(energies)
+
 	minEnergyDelta := 0.0
 	for i := 1; i < n; i++ {
 		minEnergyDelta += math.Abs(float64(energies[i] - energies[i-1]))
 	}
+
 	if normalizers.MaxEnergyDelta > 0 {
 		minEnergyDelta = (minEnergyDelta / normalizers.MaxEnergyDelta) * config.EnergyDeltaWeight
 	}
 
 	// 5. BPM Delta: Best case = tracks sorted by BPM
 	bpms := make([]float64, 0, n)
+
 	for _, t := range tracks {
 		if t.BPM > 0 {
 			bpms = append(bpms, t.BPM)
 		}
 	}
+
 	slices.Sort(bpms)
+
 	minBPMDelta := 0.0
 	for i := 1; i < len(bpms); i++ {
 		minBPMDelta += math.Abs(bpms[i] - bpms[i-1])
 	}
+
 	if normalizers.MaxBPMDelta > 0 && len(bpms) > 1 {
 		minBPMDelta = (minBPMDelta / normalizers.MaxBPMDelta) * config.BPMDeltaWeight
 	}
@@ -792,8 +823,10 @@ func calculateTheoreticalMinimum(tracks []playlist.Track, config config.GAConfig
 	// 6. Position Bias: Best case = lowest energy tracks at start
 	biasThreshold := int(float64(n) * config.LowEnergyBiasPortion)
 	minPositionBias := 0.0
+
 	for j := 0; j < biasThreshold && j < n; j++ {
 		positionWeight := 1.0 - float64(j)/float64(biasThreshold)
+
 		rawBias := float64(energies[j]) * positionWeight
 		if normalizers.MaxPositionBias > 0 {
 			minPositionBias += (rawBias / normalizers.MaxPositionBias) * config.LowEnergyBiasWeight

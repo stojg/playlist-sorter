@@ -10,6 +10,10 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	// Parse command-line flags
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 	memprofile := flag.String("memprofile", "", "write memory profile to file")
@@ -27,8 +31,10 @@ func main() {
 		fmt.Println("Example: playlist-sorter /Volumes/music/Music/low_energy_liquid_dnb.m3u8")
 		fmt.Println("\nFlags:")
 		flag.PrintDefaults()
-		os.Exit(1)
+
+		return 1
 	}
+
 	playlistPath := args[0]
 
 	// Setup profiling (works for all modes)
@@ -36,6 +42,7 @@ func main() {
 		stopCPUProfile := setupCPUProfile(*cpuprofile)
 		defer stopCPUProfile()
 	}
+
 	if *memprofile != "" {
 		defer writeMemoryProfile(*memprofile)
 	}
@@ -43,9 +50,12 @@ func main() {
 	// Route to appropriate mode
 	if *view {
 		if err := RunViewMode(playlistPath); err != nil {
-			log.Fatalf("View mode error: %v", err)
+			log.Printf("View mode error: %v", err)
+
+			return 1
 		}
-		return
+
+		return 0
 	}
 
 	if *visual {
@@ -55,9 +65,12 @@ func main() {
 			OutputPath:   *output,
 			DebugLog:     *debug,
 		}); err != nil {
-			log.Fatalf("TUI error: %v", err)
+			log.Printf("TUI error: %v", err)
+
+			return 1
 		}
-		return
+
+		return 0
 	}
 
 	// Default to CLI mode
@@ -67,8 +80,12 @@ func main() {
 		OutputPath:   *output,
 		DebugLog:     *debug,
 	}); err != nil {
-		log.Fatalf("CLI error: %v", err)
+		log.Printf("CLI error: %v", err)
+
+		return 1
 	}
+
+	return 0
 }
 
 // setupCPUProfile starts CPU profiling and returns a cleanup function
@@ -85,6 +102,7 @@ func setupCPUProfile(filename string) func() {
 
 	return func() {
 		pprof.StopCPUProfile()
+
 		if err := f.Close(); err != nil {
 			log.Printf("Warning: failed to close CPU profile: %v", err)
 		}
@@ -95,8 +113,11 @@ func setupCPUProfile(filename string) func() {
 func writeMemoryProfile(filename string) {
 	f, err := os.Create(filename)
 	if err != nil {
-		log.Fatalf("could not create memory profile: %v", err)
+		log.Printf("could not create memory profile: %v", err)
+
+		return
 	}
+
 	defer func() {
 		if err := f.Close(); err != nil {
 			log.Printf("Warning: failed to close memory profile: %v", err)
@@ -104,7 +125,8 @@ func writeMemoryProfile(filename string) {
 	}()
 
 	runtime.GC() // Get up-to-date statistics
+
 	if err := pprof.WriteHeapProfile(f); err != nil {
-		log.Fatalf("could not write memory profile: %v", err)
+		log.Printf("could not write memory profile: %v", err)
 	}
 }

@@ -4,6 +4,7 @@
 package playlist
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -30,7 +31,7 @@ const (
 // Returns error if the key format is invalid
 func ParseCamelotKey(key string) (*CamelotKey, error) {
 	if key == "" {
-		return nil, fmt.Errorf("empty key")
+		return nil, errors.New("empty key")
 	}
 
 	matches := camelotKeyRegex.FindStringSubmatch(key)
@@ -94,6 +95,7 @@ func HarmonicDistanceParsed(k1, k2 *CamelotKey) int {
 //	0 = perfect match (same key)
 //	1 = excellent (±1 same letter OR relative major/minor)
 //	2 = dramatic mood shift (parallel major/minor, e.g., 8B ↔ 5A)
+//
 // String returns the string representation of a CamelotKey
 func (k *CamelotKey) String() string {
 	return fmt.Sprintf("%d%c", k.Number, k.Letter)
@@ -107,9 +109,11 @@ func (k *CamelotKey) Compare(other *CamelotKey) int {
 	if k == nil && other == nil {
 		return 0
 	}
+
 	if k == nil {
 		return 1 // nil sorts last
 	}
+
 	if other == nil {
 		return -1 // nil sorts last
 	}
@@ -161,5 +165,6 @@ func abs(x int) int {
 	if x < 0 {
 		return -x
 	}
+
 	return x
 }

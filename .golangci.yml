@@ -1,0 +1,37 @@
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  enable-all: true
+  disable:
+    - godot
+    - varnamelen
+    - gocognit
+    - mnd
+    - cyclop
+    - err113
+    - forbidigo
+    - funlen
+    - gochecknoglobals
+    - lll
+    - paralleltest
+    - depguard
+    - tenv
+    - exhaustruct # requires all fields to be initialized
+    - gofumpt # sorted via makefile
+    - testpackage
+    - maintidx
+    - gci
+    - recvcheck
+
+linters-settings:
+  unused:
+    # CRITICAL: Check for unused exported functions/variables/constants/types
+    check-exported: true
+
+  gosec:
+    excludes:
+      - G304  # File path inclusion - false positive for CLI tool
+      - G404 # we wont need to use a slow secure random number generator

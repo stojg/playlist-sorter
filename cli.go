@@ -47,6 +47,7 @@ func RunCLI(opts RunOptions) error {
 	// Set up signal handling for Ctrl+C
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
 	go func() {
 		<-stop
 		cancel()
@@ -65,10 +66,12 @@ func RunCLI(opts RunOptions) error {
 
 	// Show sorted playlist with tabwriter
 	fmt.Println("\nSorted playlist:")
+
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	if _, err := fmt.Fprintln(w, "#\tKey\tBPM\tEng\tArtist\tTitle\tAlbum\tGenre"); err != nil {
 		log.Printf("Warning: failed to write header: %v", err)
 	}
+
 	if _, err := fmt.Fprintln(w, "---\t---\t---\t---\t------\t-----\t-----\t-----"); err != nil {
 		log.Printf("Warning: failed to write separator: %v", err)
 	}
@@ -87,6 +90,7 @@ func RunCLI(opts RunOptions) error {
 			log.Printf("Warning: failed to write track %d: %v", i+1, err)
 		}
 	}
+
 	if err := w.Flush(); err != nil {
 		log.Printf("Warning: failed to flush output: %v", err)
 	}
@@ -99,10 +103,13 @@ func RunCLI(opts RunOptions) error {
 		if opts.OutputPath != "" {
 			outputPath = opts.OutputPath
 		}
+
 		fmt.Printf("\nWriting sorted playlist to: %s\n", outputPath)
+
 		if err := playlist.WritePlaylist(outputPath, sortedTracks); err != nil {
 			return fmt.Errorf("failed to write playlist: %w", err)
 		}
+
 		fmt.Println("Done!")
 	}
 
@@ -117,11 +124,12 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, config *Shared
 	updateChan := make(chan GAUpdate, 10)
 
 	// Track progress with pretty printing
-	var previousBestFitness float64 = math.MaxFloat64
+	previousBestFitness := math.MaxFloat64
 
 	// Status line animation and ticker
 	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	spinnerIdx := 0
+
 	statusTicker := time.NewTicker(spinnerUpdateInterval)
 	defer statusTicker.Stop()
 
@@ -133,6 +141,7 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, config *Shared
 		} else {
 			s = fmt.Sprintf("%ds", int(d.Seconds()))
 		}
+
 		return fmt.Sprintf("%6s", s) // Right-align to 6 characters
 	}
 
@@ -145,13 +154,16 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, config *Shared
 
 	// Start GA in goroutine
 	var bestIndividual []playlist.Track
+
 	done := make(chan []playlist.Track)
+
 	progress := &Tracker{
 		updateChan:   updateChan,
 		sharedConfig: config,
 		lastGenTime:  startTime,
 	}
 	defer progress.Close()
+
 	go func() {
 		result := geneticSort(ctx, tracks, config, progress)
 		done <- result
@@ -166,6 +178,7 @@ loop:
 			if !ok {
 				// Channel closed, wait for result
 				bestIndividual = <-done
+
 				break loop
 			}
 			currentGen = update.Generation
@@ -192,6 +205,7 @@ loop:
 
 		case result := <-done:
 			bestIndividual = result
+
 			break loop
 		}
 	}

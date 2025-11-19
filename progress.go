@@ -35,6 +35,7 @@ func (pt *Tracker) SendUpdate(gen int, bestIndividual []playlist.Track, fitnessI
 	now := time.Now()
 	elapsed := now.Sub(pt.lastGenTime).Seconds()
 	genPerSec := 0.0
+
 	if elapsed > 0 {
 		genPerSec = float64(gen-pt.lastGenCount) / elapsed
 	}
@@ -52,7 +53,6 @@ func (pt *Tracker) SendUpdate(gen int, bestIndividual []playlist.Track, fitnessI
 		Breakdown:    breakdown,
 	}:
 	default:
-		// Don't block if channel is full
 	}
 
 	pt.lastGenTime = now

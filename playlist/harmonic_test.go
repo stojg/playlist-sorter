@@ -34,6 +34,7 @@ func TestIsParallelMajorMinor(t *testing.T) {
 		if !IsParallelMajorMinor(k1, k2) {
 			t.Errorf("IsParallelMajorMinor(%s, %s) = false, want true", pair.minor, pair.major)
 		}
+
 		if !IsParallelMajorMinor(k2, k1) {
 			t.Errorf("IsParallelMajorMinor(%s, %s) = false, want true", pair.major, pair.minor)
 		}
@@ -72,9 +73,11 @@ func TestIsParallelMajorMinor_NilKeys(t *testing.T) {
 	if IsParallelMajorMinor(nil, nil) {
 		t.Error("IsParallelMajorMinor(nil, nil) = true, want false")
 	}
+
 	if IsParallelMajorMinor(k1, nil) {
 		t.Error("IsParallelMajorMinor(k1, nil) = true, want false")
 	}
+
 	if IsParallelMajorMinor(nil, k1) {
 		t.Error("IsParallelMajorMinor(nil, k1) = true, want false")
 	}

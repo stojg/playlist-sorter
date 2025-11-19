@@ -14,16 +14,15 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.HarmonicWeight != 0.3 {
 		t.Errorf("Expected HarmonicWeight 0.3, got %.2f", cfg.HarmonicWeight)
 	}
-
-	// PopulationSize is now auto-calculated based on playlist length, not in config
 }
 
 func TestSaveAndLoadConfig(t *testing.T) {
 	// Create temp file
-	tmpfile, err := os.CreateTemp("", "playlist-sorter-*.toml")
+	tmpfile, err := os.CreateTemp(t.TempDir(), "playlist-sorter-*.toml")
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	defer os.Remove(tmpfile.Name())
 	tmpfile.Close()
 
@@ -43,7 +42,6 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	if loaded.HarmonicWeight != cfg.HarmonicWeight {
 		t.Errorf("HarmonicWeight mismatch: got %.2f, want %.2f", loaded.HarmonicWeight, cfg.HarmonicWeight)
 	}
-	// PopulationSize is now auto-calculated, not in config
 }
 
 func TestLoadNonExistentConfig(t *testing.T) {

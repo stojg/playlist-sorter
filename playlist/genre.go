@@ -126,6 +126,7 @@ func GenreSimilarity(genre1, genre2 string) float64 {
 		if g1 == g2 {
 			return genreIdentical // Both empty = same
 		}
+
 		return genreUnrelated // One empty = different
 	}
 
@@ -168,6 +169,7 @@ func getAncestorChain(genre string) []string {
 		if !exists || parent == "" {
 			break
 		}
+
 		chain = append(chain, parent)
 		current = parent
 	}
@@ -181,6 +183,7 @@ func sharesParent(chain1, chain2 []string) bool {
 	if len(chain1) > 1 && len(chain2) > 1 {
 		return chain1[1] == chain2[1]
 	}
+
 	return false
 }
 
@@ -194,5 +197,6 @@ func sharesGrandparent(chain1, chain2 []string) bool {
 			}
 		}
 	}
+
 	return false
 }

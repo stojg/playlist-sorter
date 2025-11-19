@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"time"
 
-	"playlist-sorter/playlist"
-
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fsnotify/fsnotify"
+
+	"playlist-sorter/playlist"
 )
 
 const (
@@ -169,6 +169,7 @@ func RunViewMode(playlistPath string) error {
 	// Add playlist file to watcher
 	if err := watcher.Add(playlistPath); err != nil {
 		watcher.Close()
+
 		return fmt.Errorf("failed to watch playlist file: %w", err)
 	}
 
@@ -184,11 +185,13 @@ func RunViewMode(playlistPath string) error {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		watcher.Close()
+
 		return fmt.Errorf("view mode error: %w", err)
 	}
 
 	// Cleanup
 	watcher.Close()
+
 	return nil
 }
 
@@ -201,6 +204,8 @@ func (m viewModel) Init() tea.Cmd {
 }
 
 // Update handles messages and updates the model
+//
+//nolint:ireturn // Bubble Tea framework requires returning tea.Model interface
 func (m viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -243,6 +248,7 @@ func (m viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Update viewport content
 			m.viewport.SetContent(m.renderPlaylistContent())
 		}
+
 		return m, nil
 
 	case tea.KeyMsg:
@@ -258,8 +264,10 @@ func (m viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// First q press, show warning
 				m.quitConfirmationPending = true
 				m.errorMsg = "Unsaved changes! Press 'w' to save or 'q' again to quit without saving"
+
 				return m, nil
 			}
+
 			return m, tea.Quit
 
 		case key.Matches(msg, viewKeys.Up):
@@ -281,6 +289,7 @@ func (m viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursorPos < 0 {
 				m.cursorPos = 0
 			}
+
 			m.ensureCursorVisible()
 			m.viewport.SetContent(m.renderPlaylistContent())
 
@@ -289,9 +298,11 @@ func (m viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursorPos >= len(m.tracks) {
 				m.cursorPos = len(m.tracks) - 1
 			}
+
 			if m.cursorPos < 0 {
 				m.cursorPos = 0
 			}
+
 			m.ensureCursorVisible()
 			m.viewport.SetContent(m.renderPlaylistContent())
 
@@ -304,6 +315,7 @@ func (m viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.tracks) > 0 {
 				m.cursorPos = len(m.tracks) - 1
 			}
+
 			m.viewport.GotoBottom()
 			m.viewport.SetContent(m.renderPlaylistContent())
 
@@ -333,6 +345,7 @@ func (m viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Update viewport
 	m.viewport, cmd = m.viewport.Update(msg)
+
 	return m, cmd
 }
 
@@ -343,7 +356,7 @@ func (m viewModel) View() string {
 	}
 
 	// Title
-	title := viewTitleStyle.Render(fmt.Sprintf("Playlist Viewer: %s", m.playlistPath))
+	title := viewTitleStyle.Render("Playlist Viewer: " + m.playlistPath)
 
 	// Header row
 	header := viewHeaderStyle.Render(fmt.Sprintf("%-3s %-4s %-4s %-3s %-20s %-30s %-20s %-15s",
@@ -374,6 +387,7 @@ func waitForFileChange(watcher *fsnotify.Watcher) tea.Cmd {
 				if event.Op&fsnotify.Write == fsnotify.Write {
 					// Debounce: wait a bit for atomic writes to complete
 					time.Sleep(100 * time.Millisecond)
+
 					return fileChangeMsg{}
 				}
 			case err, ok := <-watcher.Errors:
@@ -441,6 +455,7 @@ func (m *viewModel) deleteTrack() {
 	if m.cursorPos >= len(m.tracks) && len(m.tracks) > 0 {
 		m.cursorPos = len(m.tracks) - 1
 	}
+
 	if len(m.tracks) == 0 {
 		m.cursorPos = 0
 	}
@@ -512,7 +527,7 @@ func (m *viewModel) redo() {
 // savePlaylist writes the current playlist to disk
 func (m *viewModel) savePlaylist() error {
 	if err := playlist.WritePlaylist(m.playlistPath, m.tracks); err != nil {
-		return err
+		return fmt.Errorf("failed to write playlist: %w", err)
 	}
 
 	// Clear modified flag and undo/redo stacks

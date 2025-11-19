@@ -4,9 +4,10 @@
 package main
 
 import (
-	"playlist-sorter/playlist"
 	"slices"
 	"testing"
+
+	"playlist-sorter/playlist"
 )
 
 func TestSortOrder(t *testing.T) {
@@ -19,6 +20,7 @@ func TestSortOrder(t *testing.T) {
 		} else if a > b {
 			return 1
 		}
+
 		return 0
 	})
 
@@ -26,6 +28,7 @@ func TestSortOrder(t *testing.T) {
 	if scores[0] != 0.1 {
 		t.Errorf("Expected scores[0] to be lowest (0.1), got %.1f", scores[0])
 	}
+
 	if scores[3] != 0.9 {
 		t.Errorf("Expected scores[3] to be highest (0.9), got %.1f", scores[3])
 	}
@@ -61,6 +64,7 @@ func TestIndividualSortingWithSmallDifferences(t *testing.T) {
 		} else if a.Score > b.Score {
 			return 1
 		}
+
 		return 0
 	})
 
@@ -68,6 +72,7 @@ func TestIndividualSortingWithSmallDifferences(t *testing.T) {
 	if individuals[0].Score != 0.0573 {
 		t.Errorf("Expected individuals[0] to be best (0.0573), got %.4f", individuals[0].Score)
 	}
+
 	if individuals[3].Score != 0.0650 {
 		t.Errorf("Expected individuals[3] to be worst (0.0650), got %.4f", individuals[3].Score)
 	}
@@ -103,7 +108,7 @@ func TestOrderCrossover(t *testing.T) {
 	present := make(map[string]bool, 10)
 
 	// Run crossover multiple times (it's randomized)
-	for trial := 0; trial < 100; trial++ {
+	for trial := range 100 {
 		orderCrossover(child, parent1, parent2, present)
 
 		// Verify child is a valid permutation (no duplicates, all indices present)
@@ -112,6 +117,7 @@ func TestOrderCrossover(t *testing.T) {
 			if seen[track.Index] {
 				t.Fatalf("Trial %d: Duplicate index %d in child", trial, track.Index)
 			}
+
 			seen[track.Index] = true
 		}
 
@@ -120,7 +126,7 @@ func TestOrderCrossover(t *testing.T) {
 		}
 
 		// Verify all indices 0-9 are present
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			if !seen[i] {
 				t.Fatalf("Trial %d: Missing index %d in child", trial, i)
 			}

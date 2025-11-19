@@ -149,8 +149,19 @@ test:
 
 ## lint: Run linter
 lint:
+	@echo "$(GREEN)[LINT]$(NC) Checking code formatting..."
+	@go tool gofumpt -d . > /tmp/gofumpt-diff.txt 2>&1 || true
+	@if [ -s /tmp/gofumpt-diff.txt ]; then \
+		echo "$(RED)✗$(NC) Code is not properly formatted. Run 'make fmt' to fix."; \
+		cat /tmp/gofumpt-diff.txt; \
+		rm -f /tmp/gofumpt-diff.txt; \
+		exit 1; \
+	fi
+	@rm -f /tmp/gofumpt-diff.txt
 	@echo "$(GREEN)[LINT]$(NC) Running golangci-lint..."
 	@go tool golangci-lint run
+	@echo "$(GREEN)[DEADCODE]$(NC) Checking for unreachable functions..."
+	@go tool deadcode ./...
 	@echo "$(GREEN)✓$(NC) Lint passed"
 
 ## vuln: Check for security vulnerabilities
@@ -162,7 +173,8 @@ vuln:
 ## fmt: Format code
 fmt:
 	@echo "$(GREEN)[FMT]$(NC) Formatting code..."
-	@go fmt ./...
+	@go tool goimports -w .
+	@go tool gofumpt -l -w .
 	@echo "$(GREEN)✓$(NC) Code formatted"
 
 ## check: Run all code quality checks (fmt + lint + vuln)

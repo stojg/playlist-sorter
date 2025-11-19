@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -86,11 +87,11 @@ func LoadPlaylistForMode(opts PlaylistOptions, validation PlaylistValidation) ([
 
 	// Validate playlist size
 	if len(tracks) == 0 {
-		return nil, fmt.Errorf("playlist is empty")
+		return nil, errors.New("playlist is empty")
 	}
 
 	if len(tracks) == 1 && validation == RequireMultipleTracks {
-		return nil, fmt.Errorf("playlist has only one track, nothing to optimize")
+		return nil, errors.New("playlist has only one track, nothing to optimize")
 	}
 
 	// Assign index values to tracks
@@ -123,9 +124,11 @@ func SetupDebugLog(filename string) error {
 func InitDebugLog(filename string) error {
 	f, err := os.Create(filename)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create debug log file: %w", err)
 	}
+
 	debugLog = log.New(f, "", log.Ltime|log.Lmicroseconds)
+
 	return nil
 }
 
@@ -141,9 +144,11 @@ func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
+
 	if maxLen <= 3 {
 		return s[:maxLen]
 	}
+
 	return s[:maxLen-3] + "..."
 }
 

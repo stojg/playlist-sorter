@@ -47,6 +47,7 @@ func GetTrackMetadata(trackPath string) (*Track, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
+
 	defer func() {
 		_ = file.Close() // Explicitly ignore error for read-only file
 	}()
@@ -71,6 +72,7 @@ func GetTrackMetadata(trackPath string) (*Track, error) {
 
 	// Get BPM from custom tag (varies by format)
 	var bpm float64
+
 	if raw := metadata.Raw(); raw != nil {
 		// Common BPM tag names across formats
 		for _, key := range []string{"BPM", "TBPM", "bpm", "tempo"} {
@@ -84,6 +86,7 @@ func GetTrackMetadata(trackPath string) (*Track, error) {
 				case float64:
 					bpm = v
 				}
+
 				if bpm > 0 {
 					break
 				}
@@ -118,6 +121,7 @@ func extractKey(comments string) string {
 	if len(matches) > 1 {
 		return matches[1]
 	}
+
 	return ""
 }
 
@@ -131,6 +135,7 @@ func extractEnergy(comments string) int {
 			return energy
 		}
 	}
+
 	return 0
 }
 

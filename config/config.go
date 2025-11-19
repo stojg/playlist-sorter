@@ -53,6 +53,7 @@ func LoadConfig(path string) (GAConfig, error) {
 			// File doesn't exist, return defaults
 			return DefaultConfig(), nil
 		}
+
 		return DefaultConfig(), fmt.Errorf("failed to read config file: %w", err)
 	}
 
@@ -69,7 +70,7 @@ func LoadConfig(path string) (GAConfig, error) {
 func SaveConfig(path string, config GAConfig) error {
 	// Ensure directory exists
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -82,6 +83,7 @@ func SaveConfig(path string, config GAConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to create config file: %w", err)
 	}
+
 	defer func() {
 		if err := f.Close(); err != nil {
 			fmt.Printf("Warning: failed to close config file: %v\n", err)

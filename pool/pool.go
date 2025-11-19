@@ -26,10 +26,12 @@ func NewWorkerPool(bufferSize int) *WorkerPool {
 	}
 
 	// Start worker goroutines
-	for i := 0; i < numWorkers; i++ {
+	for range numWorkers {
 		pool.workerWg.Add(1)
+
 		go func() {
 			defer pool.workerWg.Done()
+
 			for task := range pool.taskChan {
 				task()
 				pool.taskWg.Done() // Mark task as complete

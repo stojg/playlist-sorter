@@ -17,11 +17,13 @@ func ReadPlaylist(path string) ([]Track, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open playlist: %w", err)
 	}
+
 	defer func() {
 		_ = file.Close() // Explicitly ignore error for read-only file
 	}()
 
 	var tracks []Track
+
 	scanner := bufio.NewScanner(file)
 
 	for scanner.Scan() {
@@ -69,7 +71,9 @@ func LoadPlaylistWithMetadata(path string, verbose bool) ([]Track, error) {
 			if verbose {
 				fmt.Printf("[!] Skipping track (could not load metadata): %s: %v\n", tracks[i].Path, err)
 			}
+
 			skippedCount++
+
 			continue
 		}
 
@@ -96,6 +100,7 @@ func WritePlaylist(path string, tracks []Track) error {
 	if err != nil {
 		return fmt.Errorf("failed to create playlist: %w", err)
 	}
+
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil && err == nil {
 			err = fmt.Errorf("failed to close playlist file: %w", closeErr)

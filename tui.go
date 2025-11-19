@@ -6,14 +6,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
-
-	"playlist-sorter/config"
-	"playlist-sorter/playlist"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"playlist-sorter/config"
+	"playlist-sorter/playlist"
 )
 
 // Parameter represents a tunable GA parameter with constraints
@@ -49,7 +50,7 @@ type model struct {
 	playlistPath         string             // Playlist file path for reading
 	outputPath           string             // Output path for saving (may differ from playlistPath)
 	dryRun               bool               // If true, don't save changes
-	ctx                  context.Context    // Context for GA cancellation
+	ctx                  context.Context    //nolint:containedctx // Bubble Tea needs context for cancellation
 	cancel               context.CancelFunc // Cancel function
 	updateChan           chan GAUpdate      // Channel for GA updates
 	quitting             bool
@@ -146,6 +147,7 @@ func RunTUI(opts RunOptions) error {
 
 	// Run program
 	p := tea.NewProgram(m, tea.WithAltScreen())
+
 	finalModel, err := p.Run()
 	if err != nil {
 		return fmt.Errorf("TUI error: %w", err)
@@ -159,6 +161,7 @@ func RunTUI(opts RunOptions) error {
 			if err := playlist.WritePlaylist(m.outputPath, m.bestPlaylist); err != nil {
 				return fmt.Errorf("failed to save playlist: %w", err)
 			}
+
 			fmt.Printf("\nSaved optimized playlist to: %s\n", m.outputPath)
 		}
 	}
@@ -229,11 +232,14 @@ func (m model) Init() tea.Cmd {
 }
 
 // Update handles messages and updates the model
+//
+//nolint:ireturn // Bubble Tea framework requires returning tea.Model interface
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+
 		return m, nil
 
 	case GAUpdate:
@@ -245,6 +251,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// First update - use the initial fitness as baseline
 				oldFitness = msg.BestFitness
 			}
+
 			m.lastImprovementDelta = oldFitness - msg.BestFitness
 			m.previousBestFitness = oldFitness
 			m.lastImprovementTime = time.Now()
@@ -274,6 +281,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancel()
 			// Save config on quit
 			_ = config.SaveConfig(m.configPath, m.sharedConfig.Get())
+
 			return m, tea.Quit
 
 		case key.Matches(msg, keys.Up):
@@ -344,6 +352,7 @@ func runGA(ctx context.Context, tracks []playlist.Track, config *SharedConfig, u
 		}
 		defer progress.Close()
 		geneticSort(ctx, tracks, config, progress)
+
 		return nil
 	}
 }
@@ -356,6 +365,7 @@ func waitForGAUpdate(updateChan <-chan GAUpdate) tea.Cmd {
 			// Channel closed
 			return nil
 		}
+
 		return update
 	}
 }
@@ -374,6 +384,7 @@ func (m *model) increaseParam() {
 			*param.Value = newVal
 		}
 	}
+
 	m.syncConfigToGA()
 }
 
@@ -391,10 +402,12 @@ func (m *model) decreaseParam() {
 		if newVal < param.Min && newVal >= param.Min-0.0001 {
 			newVal = param.Min
 		}
+
 		if newVal >= param.Min {
 			*param.Value = newVal
 		}
 	}
+
 	m.syncConfigToGA()
 }
 
@@ -436,7 +449,7 @@ func (m model) renderParameters() string {
 	for i, param := range m.params {
 		var value string
 		if param.IsInt {
-			value = fmt.Sprintf("%d", *param.IntValue)
+			value = strconv.Itoa(*param.IntValue)
 		} else {
 			value = fmt.Sprintf("%.2f", *param.Value)
 		}
@@ -446,6 +459,7 @@ func (m model) renderParameters() string {
 		if i == m.selectedParam {
 			prefix = "► "
 		}
+
 		line := fmt.Sprintf("%s%-25s %6s", prefix, param.Name, value)
 
 		if i == m.selectedParam {
@@ -473,7 +487,7 @@ func (m model) renderPlaylist() string {
 		maxTracks = len(m.bestPlaylist)
 	}
 
-	for i := 0; i < maxTracks; i++ {
+	for i := range maxTracks {
 		track := m.bestPlaylist[i]
 		artist := truncate(track.Artist, 20)
 		title := truncate(track.Title, 30)
@@ -512,6 +526,7 @@ func (m model) renderStatus() string {
 		timeSince,
 		deltaStr,
 	)
+
 	return statusStyle.Width(m.width).Render(status)
 }
 
@@ -521,6 +536,7 @@ func (m model) renderBreakdown() string {
 		// No breakdown available yet
 		return ""
 	}
+
 	breakdown := fmt.Sprintf(" Harmonic: %.4f | Energy: %.4f | BPM: %.4f | Genre: %.4f | Artist: %.4f | Album: %.4f | Bias: %.4f",
 		m.breakdown.Harmonic,
 		m.breakdown.EnergyDelta,
@@ -530,6 +546,7 @@ func (m model) renderBreakdown() string {
 		m.breakdown.SameAlbum,
 		m.breakdown.PositionBias,
 	)
+
 	return helpStyle.Render(breakdown)
 }
 
