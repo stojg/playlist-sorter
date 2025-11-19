@@ -32,6 +32,14 @@ func debugf(format string, args ...interface{}) {
 	}
 }
 
+// RunOptions contains command-line options for all modes (CLI, TUI, View)
+type RunOptions struct {
+	PlaylistPath string
+	DryRun       bool
+	OutputPath   string
+	DebugLog     bool
+}
+
 // PlaylistOptions contains options for loading playlists
 type PlaylistOptions struct {
 	Path    string

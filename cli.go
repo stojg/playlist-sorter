@@ -22,16 +22,8 @@ const (
 	fitnessImprovementEpsilon = 1e-10 // Threshold for considering fitness improvements significant
 )
 
-// CLIOptions contains options for CLI mode
-type CLIOptions struct {
-	PlaylistPath string
-	DryRun       bool
-	OutputPath   string
-	DebugLog     bool
-}
-
 // RunCLI executes CLI mode optimization
-func RunCLI(opts CLIOptions) error {
+func RunCLI(opts RunOptions) error {
 	// Setup debug logging if requested
 	if opts.DebugLog {
 		if err := SetupDebugLog("playlist-sorter-debug.log"); err != nil {

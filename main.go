@@ -49,14 +49,19 @@ func main() {
 	}
 
 	if *visual {
-		if err := RunTUI(playlistPath); err != nil {
+		if err := RunTUI(RunOptions{
+			PlaylistPath: playlistPath,
+			DryRun:       *dryRun,
+			OutputPath:   *output,
+			DebugLog:     *debug,
+		}); err != nil {
 			log.Fatalf("TUI error: %v", err)
 		}
 		return
 	}
 
 	// Default to CLI mode
-	if err := RunCLI(CLIOptions{
+	if err := RunCLI(RunOptions{
 		PlaylistPath: playlistPath,
 		DryRun:       *dryRun,
 		OutputPath:   *output,

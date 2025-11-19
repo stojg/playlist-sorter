@@ -46,7 +46,9 @@ type model struct {
 	width                int
 	height               int
 	configPath           string             // Config file path
-	playlistPath         string             // Playlist file path for auto-saving
+	playlistPath         string             // Playlist file path for reading
+	outputPath           string             // Output path for saving (may differ from playlistPath)
+	dryRun               bool               // If true, don't save changes
 	ctx                  context.Context    // Context for GA cancellation
 	cancel               context.CancelFunc // Cancel function
 	updateChan           chan GAUpdate      // Channel for GA updates
@@ -119,7 +121,7 @@ var (
 )
 
 // initModel creates the initial model
-func initModel(tracks []playlist.Track, configPath string, playlistPath string) model {
+func initModel(tracks []playlist.Track, configPath string, opts RunOptions) model {
 	cfg, _ := config.LoadConfig(configPath)
 
 	// Create shared config for thread-safe GA access
@@ -133,6 +135,12 @@ func initModel(tracks []playlist.Track, configPath string, playlistPath string) 
 	// Create context for GA cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Determine output path
+	outputPath := opts.PlaylistPath
+	if opts.OutputPath != "" {
+		outputPath = opts.OutputPath
+	}
+
 	m := model{
 		sharedConfig:        sharedConfig,
 		localConfig:         localConfig, // Store pointer to config
@@ -140,7 +148,9 @@ func initModel(tracks []playlist.Track, configPath string, playlistPath string) 
 		bestPlaylist:        tracks, // Start with original order
 		originalTracks:      tracks,
 		configPath:          configPath,
-		playlistPath:        playlistPath,
+		playlistPath:        opts.PlaylistPath,
+		outputPath:          outputPath,
+		dryRun:              opts.DryRun,
 		ctx:                 ctx,
 		cancel:              cancel,
 		updateChan:          make(chan GAUpdate, 10),
@@ -229,9 +239,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.genPerSec = msg.GenPerSec
 		m.timeSinceImprovement = time.Since(m.lastImprovementTime)
 
-		// Auto-save the best playlist to disk
-		if len(m.bestPlaylist) > 0 {
-			_ = playlist.WritePlaylist(m.playlistPath, m.bestPlaylist)
+		// Auto-save the best playlist to disk (unless dry-run mode)
+		if !m.dryRun && len(m.bestPlaylist) > 0 {
+			_ = playlist.WritePlaylist(m.outputPath, m.bestPlaylist)
 		}
 
 		// Queue next update
@@ -483,15 +493,17 @@ func (m model) renderHelp() string {
 }
 
 // RunTUI starts the TUI mode
-func RunTUI(playlistPath string) error {
-	// Setup debug logging (always enabled for TUI)
-	if err := SetupDebugLog("playlist-sorter-debug.log"); err != nil {
-		return err
+func RunTUI(opts RunOptions) error {
+	// Setup debug logging if requested
+	if opts.DebugLog {
+		if err := SetupDebugLog("playlist-sorter-debug.log"); err != nil {
+			return err
+		}
 	}
 
 	// Load and validate playlist using common initialization
 	tracks, err := LoadPlaylistForMode(PlaylistOptions{
-		Path:    playlistPath,
+		Path:    opts.PlaylistPath,
 		Verbose: false,
 	}, RequireMultipleTracks)
 	if err != nil {
@@ -502,7 +514,7 @@ func RunTUI(playlistPath string) error {
 	configPath := config.GetConfigPath()
 
 	// Create model
-	m := initModel(tracks, configPath, playlistPath)
+	m := initModel(tracks, configPath, opts)
 
 	// Run program
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -511,12 +523,16 @@ func RunTUI(playlistPath string) error {
 		return fmt.Errorf("TUI error: %w", err)
 	}
 
-	// Save the optimized playlist on exit
+	// Save the optimized playlist on exit (unless dry-run mode)
 	if m, ok := finalModel.(model); ok && len(m.bestPlaylist) > 0 {
-		if err := playlist.WritePlaylist(playlistPath, m.bestPlaylist); err != nil {
-			return fmt.Errorf("failed to save playlist: %w", err)
+		if m.dryRun {
+			fmt.Println("\n--dry-run mode: playlist not modified")
+		} else {
+			if err := playlist.WritePlaylist(m.outputPath, m.bestPlaylist); err != nil {
+				return fmt.Errorf("failed to save playlist: %w", err)
+			}
+			fmt.Printf("\nSaved optimized playlist to: %s\n", m.outputPath)
 		}
-		fmt.Printf("\nSaved optimized playlist to: %s\n", playlistPath)
 	}
 
 	return nil
