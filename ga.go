@@ -22,22 +22,22 @@ const (
 	maxDuration = 1 * time.Hour // Maximum optimization time
 
 	// Population parameters
-	populationSize     = 100
-	immigrationRate    = 0.15
-	immigrantSwapsDivisor = 10   // Divide genome length by this to get immigrant swap count
-	elitePercentage    = 0.03
-	tournamentSize     = 3
+	populationSize        = 100
+	immigrationRate       = 0.15
+	immigrantSwapsDivisor = 10 // Divide genome length by this to get immigrant swap count
+	elitePercentage       = 0.03
+	tournamentSize        = 3
 
 	// Mutation parameters
-	maxMutationRate    = 0.3
-	minMutationRate    = 0.1
-	mutationDecayGen   = 100.0
-	minSwapMutations   = 2
-	maxSwapMutations   = 5
+	maxMutationRate  = 0.3
+	minMutationRate  = 0.1
+	mutationDecayGen = 100.0
+	minSwapMutations = 2
+	maxSwapMutations = 5
 
 	// Local search parameters
-	twoOptStartGen     = 50  // Generation to start applying 2-opt
-	twoOptIntervalGens = 100 // Apply 2-opt every N generations after start
+	twoOptStartGen       = 50    // Generation to start applying 2-opt
+	twoOptIntervalGens   = 100   // Apply 2-opt every N generations after start
 	floatingPointEpsilon = 1e-10 // Threshold for floating-point comparisons
 )
 
@@ -163,7 +163,7 @@ func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *Sha
 	// pre-calculate fitness score for all possible track pairs so we don't do this in tight loops
 	buildEdgeFitnessCache(tracks)
 
-	// create worker pool for parallel fitness evaluation
+	// create a worker pool for parallel fitness evaluation
 	workerPool := pool.NewWorkerPool(runtime.NumCPU())
 	defer workerPool.Close()
 
