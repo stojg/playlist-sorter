@@ -252,6 +252,10 @@ func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *Sha
 	lastGenTime := startTime
 	lastGenCount := 0
 
+	// Reusable map buffer for orderCrossover to avoid allocations
+	// Sized to track presence of all tracks in playlist
+	presentMap := make(map[string]bool, genesLen)
+
 	// Ensure channel is closed exactly once
 	var closeOnce sync.Once
 	closeChannel := func() {
@@ -416,12 +420,12 @@ loop:
 		// Create offspring through Order Crossover (OX)
 		// Simpler and faster than Edge Recombination Crossover (ERC), with good exploration characteristics
 		for i := 2; i < len(parents)-1; i += 2 {
-			orderCrossover(nextGen[i], parents[i], parents[i+1])
-			orderCrossover(nextGen[i+1], parents[i+1], parents[i])
+			orderCrossover(nextGen[i], parents[i], parents[i+1], presentMap)
+			orderCrossover(nextGen[i+1], parents[i+1], parents[i], presentMap)
 		}
 		// Handle odd population size
 		if len(parents)%2 == 1 {
-			orderCrossover(nextGen[len(parents)-1], parents[len(parents)-1], parents[0])
+			orderCrossover(nextGen[len(parents)-1], parents[len(parents)-1], parents[0], presentMap)
 		}
 
 		// Calculate adaptive mutation rate (increases when stuck to escape local optima)
@@ -868,8 +872,14 @@ func reverseSegment(tracks []playlist.Track, start, end int) {
 // Algorithm:
 //  1. Select random substring from parent1 and copy to offspring
 //  2. Fill remaining positions with tracks from parent2 in order, skipping those already present
-func orderCrossover(dst, parent1, parent2 []playlist.Track) {
+//
+// The present map is passed in as a reusable buffer to avoid allocations.
+// The function clears the map at the beginning, so it can be reused across calls.
+func orderCrossover(dst, parent1, parent2 []playlist.Track, present map[string]bool) {
 	numTracks := len(parent1)
+
+	// Clear the map from previous use
+	clear(present)
 
 	// Select two random cut points
 	cut1 := rand.IntN(numTracks)
@@ -878,9 +888,7 @@ func orderCrossover(dst, parent1, parent2 []playlist.Track) {
 		cut1, cut2 = cut2, cut1
 	}
 
-	// keep track of which tracks are already present in offspring
-	present := make(map[string]bool, numTracks)
-	// Copy substring from parent1 to offspring
+	// Copy substring from parent1 to offspring and track present tracks
 	for i := cut1; i <= cut2; i++ {
 		dst[i] = parent1[i]
 		present[parent1[i].Path] = true

@@ -99,9 +99,12 @@ func TestOrderCrossover(t *testing.T) {
 		parent2[i] = tracks[9-i]
 	}
 
+	// Create reusable map for crossover (avoid allocations)
+	present := make(map[string]bool, 10)
+
 	// Run crossover multiple times (it's randomized)
 	for trial := 0; trial < 100; trial++ {
-		orderCrossover(child, parent1, parent2)
+		orderCrossover(child, parent1, parent2, present)
 
 		// Verify child is a valid permutation (no duplicates, all indices present)
 		seen := make(map[int]bool)
