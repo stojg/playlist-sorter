@@ -94,66 +94,6 @@ func HarmonicDistanceParsed(k1, k2 *CamelotKey) int {
 //	0 = perfect match (same key)
 //	1 = excellent (±1 same letter OR relative major/minor)
 //	2 = dramatic mood shift (parallel major/minor, e.g., 8B ↔ 5A)
-//	10 = bad (any other transition, including invalid/missing keys)
-//
-// Based on official Camelot mixing documentation
-func HarmonicDistance(key1, key2 string) int {
-	k1, err1 := ParseCamelotKey(key1)
-	k2, err2 := ParseCamelotKey(key2)
-
-	// If either key is invalid, return large distance
-	if err1 != nil || err2 != nil {
-		return 999
-	}
-
-	return HarmonicDistanceParsed(k1, k2)
-}
-
-// IsCompatible returns true if two keys are harmonically compatible for mixing
-// Compatible means harmonic distance <= 2
-func IsCompatible(key1, key2 string) bool {
-	return HarmonicDistance(key1, key2) <= 2
-}
-
-// GetCompatibleKeys returns all keys that are compatible with the given key
-// Returns keys in order of compatibility (distance 0, 1, then 2)
-func GetCompatibleKeys(key string) []string {
-	k, err := ParseCamelotKey(key)
-	if err != nil {
-		return nil
-	}
-
-	var compatible []string
-
-	// Same key (distance 0)
-	compatible = append(compatible, key)
-
-	// Relative major/minor (distance 1)
-	otherLetter := byte('B')
-	if k.Letter == 'B' {
-		otherLetter = 'A'
-	}
-	compatible = append(compatible, fmt.Sprintf("%d%c", k.Number, otherLetter))
-
-	// ±1 number with same letter (distance 1)
-	prevNum := k.Number - 1
-	if prevNum < 1 {
-		prevNum = 12
-	}
-	nextNum := k.Number + 1
-	if nextNum > 12 {
-		nextNum = 1
-	}
-	compatible = append(compatible, fmt.Sprintf("%d%c", prevNum, k.Letter))
-	compatible = append(compatible, fmt.Sprintf("%d%c", nextNum, k.Letter))
-
-	// ±1 number with different letter (distance 2)
-	compatible = append(compatible, fmt.Sprintf("%d%c", prevNum, otherLetter))
-	compatible = append(compatible, fmt.Sprintf("%d%c", nextNum, otherLetter))
-
-	return compatible
-}
-
 // String returns the string representation of a CamelotKey
 func (k *CamelotKey) String() string {
 	return fmt.Sprintf("%d%c", k.Number, k.Letter)

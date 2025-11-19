@@ -118,23 +118,3 @@ func TestHarmonicDistanceParsed_ParallelMajorMinor(t *testing.T) {
 		}
 	}
 }
-
-// TestHarmonicDistance_ParallelMajorMinor tests string-based distance calculation
-func TestHarmonicDistance_ParallelMajorMinor(t *testing.T) {
-	testCases := []struct {
-		key1 string
-		key2 string
-		want int
-	}{
-		{"5A", "8B", 2},  // C minor ↔ C major (parallel major/minor)
-		{"8B", "5A", 2},  // C major ↔ C minor (parallel major/minor)
-		{"10A", "1B", 2}, // B minor ↔ B major (parallel major/minor)
-	}
-
-	for _, tc := range testCases {
-		got := HarmonicDistance(tc.key1, tc.key2)
-		if got != tc.want {
-			t.Errorf("HarmonicDistance(%s, %s) = %d, want %d", tc.key1, tc.key2, got, tc.want)
-		}
-	}
-}
