@@ -737,8 +737,7 @@ func twoOptImprove(tracks []playlist.Track, config config.GAConfig) {
 				newFitness := currentFitness + newSegmentFitness - oldSegmentFitness
 
 				// If no improvement, undo the reversal and try next segment
-				// Use epsilon threshold to avoid accepting tiny floating point differences
-				if newFitness >= currentFitness-floatingPointEpsilon {
+				if !hasFitnessImproved(newFitness, currentFitness, floatingPointEpsilon) {
 					reverseSegment(tracks, i, j)
 					continue
 				}

@@ -179,7 +179,7 @@ loop:
 			currentGen = update.Generation
 
 			// Print progress when fitness improves
-			fitnessImproved := update.BestFitness < previousBestFitness-fitnessImprovementEpsilon
+			fitnessImproved := hasFitnessImproved(update.BestFitness, previousBestFitness, fitnessImprovementEpsilon)
 
 			if fitnessImproved {
 				// Clear status line before printing progress

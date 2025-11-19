@@ -138,3 +138,9 @@ func truncate(s string, maxLen int) string {
 	}
 	return s[:maxLen-3] + "..."
 }
+
+// hasFitnessImproved returns true if newFitness is significantly better than oldFitness
+// Uses epsilon threshold to avoid false positives from floating-point precision issues
+func hasFitnessImproved(newFitness, oldFitness, epsilon float64) bool {
+	return newFitness < oldFitness-epsilon
+}
