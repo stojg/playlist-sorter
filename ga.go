@@ -318,24 +318,25 @@ loop:
 
 		// Now we start the genetic algorithm itself
 
-		// replace the worst individuals with mutated copies of the best individual
+		// Replace the worst individuals with mutated copies of the best individual
+		// This introduces new genetic material while preserving good solutions
 		immigrantCount := int(float64(populationSize) * immigrationRate)
+		immigrantSwaps := genesLen / 10
+		if immigrantSwaps < 3 {
+			immigrantSwaps = 3
+		}
+
 		for i := 0; i < immigrantCount; i++ {
 			worstIdx := len(scoredPopulation) - 1 - i
-			// copy genes from the best individual
+			// Copy genes from the best individual
 			copy(scoredPopulation[worstIdx].Genes, scoredPopulation[0].Genes)
-			// at minimum 3 times, swap place of two tracks per immigrant
-			numSwaps := genesLen / 10
-			if numSwaps < 3 {
-				numSwaps = 3
-			}
-			// swap swap
-			for s := 0; s < numSwaps; s++ {
+			// Apply random swaps to create variation
+			for s := 0; s < immigrantSwaps; s++ {
 				a := rand.IntN(genesLen)
 				b := rand.IntN(genesLen)
 				scoredPopulation[worstIdx].Genes[a], scoredPopulation[worstIdx].Genes[b] = scoredPopulation[worstIdx].Genes[b], scoredPopulation[worstIdx].Genes[a]
 			}
-			// re-evaluate fitness after mutation
+			// Re-evaluate fitness after mutation
 			scoredPopulation[worstIdx].Score = calculateFitness(scoredPopulation[worstIdx].Genes, config)
 		}
 
