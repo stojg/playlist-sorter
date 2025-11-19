@@ -4,6 +4,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"log"
 	"math"
@@ -174,10 +175,6 @@ func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *Sha
 	pool := pond.New(runtime.NumCPU(), populationSize*2)
 	defer pool.StopAndWait()
 
-	// Pre-allocate all buffers needed for the GA loop to avoid allocations:
-	// Double-buffered population (prevents parent corruption during crossover)
-	currentGen := make([][]playlist.Track, populationSize)
-	nextGen := make([][]playlist.Track, populationSize)
 	// Scored population buffer (reused every generation to avoid allocations)
 	scoredPopulation := make([]Individual, populationSize)
 	for i := range scoredPopulation {
@@ -186,88 +183,55 @@ func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *Sha
 	// Reusable map buffer for orderCrossover (avoids per-call allocation)
 	presentMap := make(map[string]bool, genesLen)
 
-	// Initialize population with greedy solutions + random individuals
-
-	// Individual 0: Current order
-	currentGen[0] = slices.Clone(tracks)
-	nextGen[0] = make([]playlist.Track, genesLen)
-
-	// Individual 1: Sort by energy (ascending = smooth flow)
-	currentGen[1] = slices.Clone(tracks)
-	slices.SortFunc(currentGen[1], func(a, b playlist.Track) int {
-		return a.Energy - b.Energy
-	})
-	nextGen[1] = make([]playlist.Track, genesLen)
-
-	// Individual 2: Sort by BPM (ascending)
-	currentGen[2] = slices.Clone(tracks)
-	slices.SortFunc(currentGen[2], func(a, b playlist.Track) int {
-		if a.BPM < b.BPM {
-			return -1
-		} else if a.BPM > b.BPM {
-			return 1
-		}
-		return 0
-	})
-	nextGen[2] = make([]playlist.Track, genesLen)
-
-	// Individual 3: Sort by Camelot key (1A, 2A, ..., 12A, 1B, ..., 12B)
-	currentGen[3] = slices.Clone(tracks)
-	slices.SortFunc(currentGen[3], func(a, b playlist.Track) int {
-		if a.ParsedKey == nil && b.ParsedKey == nil {
-			return 0
-		}
-		if a.ParsedKey == nil {
-			return 1
-		}
-		if b.ParsedKey == nil {
-			return -1
-		}
-		// Sort by letter first (A before B), then by number
-		if a.ParsedKey.Letter != b.ParsedKey.Letter {
-			return int(a.ParsedKey.Letter - b.ParsedKey.Letter)
-		}
-		return a.ParsedKey.Number - b.ParsedKey.Number
-	})
-	nextGen[3] = make([]playlist.Track, genesLen)
-
-	// Individuals 4+: Random orderings
-	for i := 4; i < populationSize; i++ {
-		currentGen[i] = slices.Clone(tracks)
-		rand.Shuffle(len(currentGen[i]), func(a, b int) {
-			currentGen[i][a], currentGen[i][b] = currentGen[i][b], currentGen[i][a]
-		})
+	// Pre-allocate all nextGen buffers
+	nextGen := make([][]playlist.Track, populationSize)
+	for i := 0; i < populationSize; i++ {
 		nextGen[i] = make([]playlist.Track, genesLen)
 	}
 
-	// =============================================================================
-	// State tracking variables
-	// =============================================================================
+	// pre-allocate and set up currentGen buffers
+	currentGen := make([][]playlist.Track, populationSize)
 
-	var bestIndividual []playlist.Track
-	var bestFitness = math.MaxFloat64
-	var generationsWithoutImprovement = 0
+	// Individual 0: Current order
+	currentGen[0] = slices.Clone(tracks)
+	// Individual 1: Sort by energy (ascending = smooth flow)
+	currentGen[1] = slices.Clone(tracks)
+	slices.SortFunc(currentGen[1], func(a, b playlist.Track) int { return a.Energy - b.Energy })
+	// Individual 2: Sort by BPM (ascending)
+	currentGen[2] = slices.Clone(tracks)
+	slices.SortFunc(currentGen[2], func(a, b playlist.Track) int { return cmp.Compare(a.BPM, b.BPM) })
+	// Individual 3: Sort by Camelot key (1A, 2A, ..., 12A, 1B, ..., 12B)
+	currentGen[3] = slices.Clone(tracks)
+	slices.SortFunc(currentGen[3], func(a, b playlist.Track) int { return a.ParsedKey.Compare(b.ParsedKey) })
 
-	// Generation speed tracking
-	lastGenTime := startTime
-	lastGenCount := 0
+	// All the other individuals  are Random orderings
+	for i := 4; i < populationSize; i++ {
+		currentGen[i] = slices.Clone(tracks)
+		rand.Shuffle(len(currentGen[i]), func(a, b int) { currentGen[i][a], currentGen[i][b] = currentGen[i][b], currentGen[i][a] })
+	}
+
+	// state tracking variables
+	var (
+		bestIndividual                []playlist.Track
+		bestFitness                   = math.MaxFloat64
+		generationsWithoutImprovement = 0
+		lastGenTime                   = startTime
+		lastGenCount                  = 0
+	)
 
 	// Ensure channel is closed exactly once
 	var closeOnce sync.Once
 	closeChannel := func() {
 		if updateChan != nil {
-			closeOnce.Do(func() {
-				close(updateChan)
-			})
+			closeOnce.Do(func() { close(updateChan) })
 		}
 	}
 	defer closeChannel()
 
-	// Main optimization loop - runs until context cancelled or maxDuration
+	// main loop
 loop:
 	for {
 
-		// Check for cancellation or timeout
 		select {
 		case <-ctx.Done():
 			break loop
@@ -277,12 +241,12 @@ loop:
 			}
 		}
 
-		// Get current config for this generation
+		// get current config for this generation
 		debugf("[GA] Getting config for gen %d", gen)
 		config = sharedConfig.Get()
 		debugf("[GA] Config retrieved - Genre Weight: %.2f", config.GenreWeight)
 
-		// Evaluate fitness for each individual playlist (parallelized with worker pool)
+		// evaluate fitness for each individual playlist (parallelized with worker pool)
 		debugf("[GA] Starting fitness evaluation for gen %d", gen)
 		group := pool.Group()
 		for i := range currentGen {

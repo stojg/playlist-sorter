@@ -46,6 +46,30 @@ func (k *CamelotKey) String() string {
 	return fmt.Sprintf("%d%c", k.Number, k.Letter)
 }
 
+// Compare returns -1 if k < other, 0 if k == other, 1 if k > other
+// Sorts by letter first (A before B), then by number (1-12)
+// Nil keys are sorted last
+func (k *CamelotKey) Compare(other *CamelotKey) int {
+	// Handle nil cases
+	if k == nil && other == nil {
+		return 0
+	}
+	if k == nil {
+		return 1 // nil sorts last
+	}
+	if other == nil {
+		return -1 // nil sorts last
+	}
+
+	// Sort by letter first (A before B)
+	if k.Letter != other.Letter {
+		return int(k.Letter - other.Letter)
+	}
+
+	// Then by number
+	return k.Number - other.Number
+}
+
 // IsParallelMajorMinor detects if two keys are parallel major/minor (same root note, different mode)
 // For example: C Major (8B) ↔ C Minor (5A), F Major (7B) ↔ F Minor (4A)
 // This represents a dramatic mood shift according to harmonic mixing theory
