@@ -22,19 +22,20 @@ const (
 
 // viewModel holds the state for the read-only playlist viewer
 type viewModel struct {
-	playlistPath string
-	tracks       []playlist.Track
-	viewport     viewport.Model
-	width        int
-	height       int
-	fileWatcher  *fsnotify.Watcher
-	lastReload   time.Time
-	errorMsg     string
-	ready        bool
-	cursorPos    int             // Currently selected track index
-	undoStack    []playlistState // Undo history
-	redoStack    []playlistState // Redo history
-	modified     bool            // Tracks unsaved changes
+	playlistPath            string
+	tracks                  []playlist.Track
+	viewport                viewport.Model
+	width                   int
+	height                  int
+	fileWatcher             *fsnotify.Watcher
+	lastReload              time.Time
+	errorMsg                string
+	ready                   bool
+	cursorPos               int             // Currently selected track index
+	undoStack               []playlistState // Undo history
+	redoStack               []playlistState // Redo history
+	modified                bool            // Tracks unsaved changes
+	quitConfirmationPending bool            // True if user pressed quit with unsaved changes
 }
 
 // playlistState represents a snapshot of the playlist for undo/redo
@@ -355,6 +356,7 @@ func (m *viewModel) savePlaylist() error {
 
 	// Clear modified flag and undo/redo stacks
 	m.modified = false
+	m.quitConfirmationPending = false
 	m.undoStack = nil
 	m.redoStack = nil
 
@@ -426,11 +428,12 @@ func (m viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Check for unsaved changes
 			if m.modified {
 				// Check if we already showed the warning (second q press)
-				if m.errorMsg == "Unsaved changes! Press 'w' to save or 'q' again to quit without saving" {
+				if m.quitConfirmationPending {
 					// Second q press, force quit
 					return m, tea.Quit
 				}
 				// First q press, show warning
+				m.quitConfirmationPending = true
 				m.errorMsg = "Unsaved changes! Press 'w' to save or 'q' again to quit without saving"
 				return m, nil
 			}
