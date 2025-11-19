@@ -493,7 +493,7 @@ func RunTUI(playlistPath string) error {
 	tracks, err := LoadPlaylistForMode(PlaylistOptions{
 		Path:    playlistPath,
 		Verbose: false,
-	}, false)
+	}, RequireMultipleTracks)
 	if err != nil {
 		return err
 	}

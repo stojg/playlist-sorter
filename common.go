@@ -38,6 +38,14 @@ type PlaylistOptions struct {
 	Verbose bool
 }
 
+// PlaylistValidation specifies validation requirements for playlist loading
+type PlaylistValidation int
+
+const (
+	RequireMultipleTracks PlaylistValidation = iota // Reject single-track playlists (for optimization)
+	AllowSingleTrack                                // Accept single-track playlists (for viewing)
+)
+
 // OptimizationContext contains the loaded playlist and associated data
 type OptimizationContext struct {
 	Tracks       []playlist.Track
@@ -46,8 +54,8 @@ type OptimizationContext struct {
 }
 
 // LoadPlaylistForMode loads a playlist with edge case validation and index assignment
-// Returns error if playlist is empty or has only one track (unless allowSingleTrack is true)
-func LoadPlaylistForMode(opts PlaylistOptions, allowSingleTrack bool) ([]playlist.Track, error) {
+// Returns error if playlist is empty or has only one track (unless validation allows it)
+func LoadPlaylistForMode(opts PlaylistOptions, validation PlaylistValidation) ([]playlist.Track, error) {
 	// Load playlist
 	if opts.Verbose {
 		fmt.Printf("Reading playlist: %s\n", opts.Path)
@@ -63,7 +71,7 @@ func LoadPlaylistForMode(opts PlaylistOptions, allowSingleTrack bool) ([]playlis
 		return nil, fmt.Errorf("playlist is empty")
 	}
 
-	if len(tracks) == 1 && !allowSingleTrack {
+	if len(tracks) == 1 && validation == RequireMultipleTracks {
 		return nil, fmt.Errorf("playlist has only one track, nothing to optimize")
 	}
 
@@ -79,7 +87,7 @@ func LoadPlaylistForMode(opts PlaylistOptions, allowSingleTrack bool) ([]playlis
 // This is used by CLI and TUI modes that need full optimization setup
 func InitializePlaylist(opts PlaylistOptions) (*OptimizationContext, error) {
 	// Load and validate playlist
-	tracks, err := LoadPlaylistForMode(opts, false)
+	tracks, err := LoadPlaylistForMode(opts, RequireMultipleTracks)
 	if err != nil {
 		return nil, err
 	}

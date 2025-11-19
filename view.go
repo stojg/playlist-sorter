@@ -154,7 +154,7 @@ func RunViewMode(playlistPath string) error {
 	tracks, err := LoadPlaylistForMode(PlaylistOptions{
 		Path:    playlistPath,
 		Verbose: false,
-	}, true)
+	}, AllowSingleTrack)
 	if err != nil {
 		return err
 	}
