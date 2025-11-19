@@ -26,18 +26,21 @@ type GAConfig struct {
 	LowEnergyBiasWeight  float64 `toml:"low_energy_bias_weight"`
 }
 
-// DefaultConfig returns the default GA configuration with normalized fitness weights
-func DefaultConfig() GAConfig {
-	return GAConfig{
-		HarmonicWeight:       0.3,
-		SameArtistPenalty:    0.2,
-		SameAlbumPenalty:     0.2,
-		EnergyDeltaWeight:    0.3,
-		BPMDeltaWeight:       0.1,
-		GenreWeight:          0.0,
-		LowEnergyBiasPortion: 0.2,
-		LowEnergyBiasWeight:  0.0,
+// GetConfigPath returns the default config file path
+// First tries current directory, then falls back to ~/.config/playlist-sorter/config.toml
+func GetConfigPath() string {
+	// First try current directory
+	if _, err := os.Stat("./playlist-sorter.toml"); err == nil {
+		return "./playlist-sorter.toml"
 	}
+
+	// Then try ~/.config/playlist-sorter/config.toml
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "./playlist-sorter.toml"
+	}
+
+	return filepath.Join(home, ".config", "playlist-sorter", "config.toml")
 }
 
 // LoadConfig loads configuration from a TOML file
@@ -94,6 +97,20 @@ func SaveConfig(path string, config GAConfig) error {
 	return nil
 }
 
+// DefaultConfig returns the default GA configuration with normalized fitness weights
+func DefaultConfig() GAConfig {
+	return GAConfig{
+		HarmonicWeight:       0.3,
+		SameArtistPenalty:    0.2,
+		SameAlbumPenalty:     0.2,
+		EnergyDeltaWeight:    0.3,
+		BPMDeltaWeight:       0.1,
+		GenreWeight:          0.0,
+		LowEnergyBiasPortion: 0.2,
+		LowEnergyBiasWeight:  0.0,
+	}
+}
+
 // roundConfigPrecision rounds all float64 fields to 2 decimal places
 func roundConfigPrecision(config GAConfig) GAConfig {
 	round := func(x float64) float64 {
@@ -110,21 +127,4 @@ func roundConfigPrecision(config GAConfig) GAConfig {
 	config.LowEnergyBiasWeight = round(config.LowEnergyBiasWeight)
 
 	return config
-}
-
-// GetConfigPath returns the default config file path
-// First tries current directory, then falls back to ~/.config/playlist-sorter/config.toml
-func GetConfigPath() string {
-	// First try current directory
-	if _, err := os.Stat("./playlist-sorter.toml"); err == nil {
-		return "./playlist-sorter.toml"
-	}
-
-	// Then try ~/.config/playlist-sorter/config.toml
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "./playlist-sorter.toml"
-	}
-
-	return filepath.Join(home, ".config", "playlist-sorter", "config.toml")
 }

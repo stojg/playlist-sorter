@@ -344,7 +344,6 @@ loop:
 			if rand.Float64() < mutationRate {
 				// Choose between swap and inversion mutation (50/50 chance)
 				// Uint32()&1 extracts the least significant bit: 23% faster than Float64() < 0.5
-				// This runs every generation for ~98 individuals, so the speedup is significant
 				if rand.Uint32()&1 == 0 {
 					// Swap mutation: randomly swap 2-5 pairs of tracks
 					// Good for small local changes and escaping local optima
@@ -367,7 +366,7 @@ loop:
 			}
 		}
 
-		// Swap generation buffers for next iteration
+		// Swap generation buffers for the next iteration
 		currentGen, nextGen = nextGen, currentGen
 
 		debugf("[GA] Generation %d complete", gen)

@@ -30,7 +30,7 @@ type Parameter struct {
 // model holds the TUI state
 type model struct {
 	sharedConfig         *SharedConfig    // Shared config for GA thread-safe access
-	localConfig          *config.GAConfig        // Local config that params point to (pointer so addresses stay valid)
+	localConfig          *config.GAConfig // Local config that params point to (pointer so addresses stay valid)
 	params               []Parameter      // Parameter list with pointers to localConfig fields
 	selectedParam        int              // Currently selected parameter index
 	bestPlaylist         []playlist.Track // Best playlist from GA

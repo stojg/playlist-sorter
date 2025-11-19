@@ -20,10 +20,10 @@ var camelotKeyRegex = regexp.MustCompile(`^(\d+)([AB])$`)
 
 // Harmonic distance constants representing DJ mixing compatibility
 const (
-	harmonicPerfect       = 0  // Perfect match: same key
-	harmonicExcellent     = 1  // Excellent: relative major/minor or ±1 number same letter
-	harmonicDramatic      = 2  // Dramatic: parallel major/minor (mood shift)
-	harmonicIncompatible  = 10 // Incompatible: all other transitions
+	harmonicPerfect      = 0  // Perfect match: same key
+	harmonicExcellent    = 1  // Excellent: relative major/minor or ±1 number same letter
+	harmonicDramatic     = 2  // Dramatic: parallel major/minor (mood shift)
+	harmonicIncompatible = 10 // Incompatible: all other transitions
 )
 
 // ParseCamelotKey parses a Camelot key string like "8A" into structured form
@@ -47,68 +47,6 @@ func ParseCamelotKey(key string) (*CamelotKey, error) {
 		Letter: matches[2][0], // Take first byte of "A" or "B"
 		Number: number,
 	}, nil
-}
-
-// String returns the string representation of a CamelotKey
-func (k *CamelotKey) String() string {
-	return fmt.Sprintf("%d%c", k.Number, k.Letter)
-}
-
-// Compare returns -1 if k < other, 0 if k == other, 1 if k > other
-// Sorts by letter first (A before B), then by number (1-12)
-// Nil keys are sorted last
-func (k *CamelotKey) Compare(other *CamelotKey) int {
-	// Handle nil cases
-	if k == nil && other == nil {
-		return 0
-	}
-	if k == nil {
-		return 1 // nil sorts last
-	}
-	if other == nil {
-		return -1 // nil sorts last
-	}
-
-	// Sort by letter first (A before B)
-	if k.Letter != other.Letter {
-		return int(k.Letter - other.Letter)
-	}
-
-	// Then by number
-	return k.Number - other.Number
-}
-
-// IsParallelMajorMinor detects if two keys are parallel major/minor (same root note, different mode)
-// For example: C Major (8B) ↔ C Minor (5A), F Major (7B) ↔ F Minor (4A)
-// This represents a dramatic mood shift according to harmonic mixing theory
-// The Camelot wheel pattern: xA (minor) ↔ (x+3)B (major) with wraparound
-func IsParallelMajorMinor(k1, k2 *CamelotKey) bool {
-	if k1 == nil || k2 == nil {
-		return false
-	}
-
-	// Keys must have different letters (one A, one B)
-	if k1.Letter == k2.Letter {
-		return false
-	}
-
-	// Check if k1 is A (minor) and k2 is the parallel B (major)
-	if k1.Letter == 'A' {
-		parallelMajor := (k1.Number+2)%12 + 1
-		if k2.Number == parallelMajor {
-			return true
-		}
-	}
-
-	// Check if k1 is B (major) and k2 is the parallel A (minor)
-	if k1.Letter == 'B' {
-		parallelMinor := (k1.Number+8)%12 + 1 // Equivalent to (k1.Number - 3 + 12) % 12 + 1
-		if k2.Number == parallelMinor {
-			return true
-		}
-	}
-
-	return false
 }
 
 // HarmonicDistanceParsed calculates harmonic compatibility using pre-parsed keys
@@ -214,6 +152,68 @@ func GetCompatibleKeys(key string) []string {
 	compatible = append(compatible, fmt.Sprintf("%d%c", nextNum, otherLetter))
 
 	return compatible
+}
+
+// String returns the string representation of a CamelotKey
+func (k *CamelotKey) String() string {
+	return fmt.Sprintf("%d%c", k.Number, k.Letter)
+}
+
+// Compare returns -1 if k < other, 0 if k == other, 1 if k > other
+// Sorts by letter first (A before B), then by number (1-12)
+// Nil keys are sorted last
+func (k *CamelotKey) Compare(other *CamelotKey) int {
+	// Handle nil cases
+	if k == nil && other == nil {
+		return 0
+	}
+	if k == nil {
+		return 1 // nil sorts last
+	}
+	if other == nil {
+		return -1 // nil sorts last
+	}
+
+	// Sort by letter first (A before B)
+	if k.Letter != other.Letter {
+		return int(k.Letter - other.Letter)
+	}
+
+	// Then by number
+	return k.Number - other.Number
+}
+
+// IsParallelMajorMinor detects if two keys are parallel major/minor (same root note, different mode)
+// For example: C Major (8B) ↔ C Minor (5A), F Major (7B) ↔ F Minor (4A)
+// This represents a dramatic mood shift according to harmonic mixing theory
+// The Camelot wheel pattern: xA (minor) ↔ (x+3)B (major) with wraparound
+func IsParallelMajorMinor(k1, k2 *CamelotKey) bool {
+	if k1 == nil || k2 == nil {
+		return false
+	}
+
+	// Keys must have different letters (one A, one B)
+	if k1.Letter == k2.Letter {
+		return false
+	}
+
+	// Check if k1 is A (minor) and k2 is the parallel B (major)
+	if k1.Letter == 'A' {
+		parallelMajor := (k1.Number+2)%12 + 1
+		if k2.Number == parallelMajor {
+			return true
+		}
+	}
+
+	// Check if k1 is B (major) and k2 is the parallel A (minor)
+	if k1.Letter == 'B' {
+		parallelMinor := (k1.Number+8)%12 + 1 // Equivalent to (k1.Number - 3 + 12) % 12 + 1
+		if k2.Number == parallelMinor {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Helper function for integer absolute value

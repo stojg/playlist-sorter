@@ -10,10 +10,10 @@ import (
 
 // WorkerPool manages a pool of worker goroutines for parallel task execution
 type WorkerPool struct {
-	workers    int
-	taskChan   chan func()
-	workerWg   sync.WaitGroup // tracks worker goroutines lifetime
-	taskWg     sync.WaitGroup // tracks submitted tasks completion
+	workers  int
+	taskChan chan func()
+	workerWg sync.WaitGroup // tracks worker goroutines lifetime
+	taskWg   sync.WaitGroup // tracks submitted tasks completion
 }
 
 // NewWorkerPool creates a worker pool sized to available CPUs

@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	spinnerUpdateInterval = 500 * time.Millisecond // How often to update the spinner animation
-	fitnessImprovementEpsilon = 1e-10 // Threshold for considering fitness improvements significant
+	spinnerUpdateInterval     = 500 * time.Millisecond // How often to update the spinner animation
+	fitnessImprovementEpsilon = 1e-10                  // Threshold for considering fitness improvements significant
 )
 
 // RunCLI executes CLI mode optimization
