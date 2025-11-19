@@ -601,26 +601,18 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 
 			// Normalize each component to [0,1] before applying weights
 			// This ensures all weights have equal influence when set to same value
-			normalizedHarmonic := float64(edge.HarmonicDistance) / normalizers.MaxHarmonic
-			harmonicPenalty := normalizedHarmonic * config.HarmonicWeight
-			breakdown.Harmonic += harmonicPenalty
+			breakdown.Harmonic += applyWeightedPenalty(float64(edge.HarmonicDistance), normalizers.MaxHarmonic, config.HarmonicWeight)
 
 			if edge.SameArtist {
-				normalizedArtist := 1.0 / normalizers.MaxSameArtist
-				breakdown.SameArtist += normalizedArtist * config.SameArtistPenalty
+				breakdown.SameArtist += applyWeightedPenalty(1.0, normalizers.MaxSameArtist, config.SameArtistPenalty)
 			}
 			if edge.SameAlbum {
-				normalizedAlbum := 1.0 / normalizers.MaxSameAlbum
-				breakdown.SameAlbum += normalizedAlbum * config.SameAlbumPenalty
+				breakdown.SameAlbum += applyWeightedPenalty(1.0, normalizers.MaxSameAlbum, config.SameAlbumPenalty)
 			}
 
-			normalizedEnergy := edge.EnergyDelta / normalizers.MaxEnergyDelta
-			energyPenalty := normalizedEnergy * config.EnergyDeltaWeight
-			breakdown.EnergyDelta += energyPenalty
+			breakdown.EnergyDelta += applyWeightedPenalty(edge.EnergyDelta, normalizers.MaxEnergyDelta, config.EnergyDeltaWeight)
 
-			normalizedBPM := edge.BPMDelta / normalizers.MaxBPMDelta
-			bpmPenalty := normalizedBPM * config.BPMDeltaWeight
-			breakdown.BPMDelta += bpmPenalty
+			breakdown.BPMDelta += applyWeightedPenalty(edge.BPMDelta, normalizers.MaxBPMDelta, config.BPMDeltaWeight)
 
 			// Genre penalty: signed weight controls clustering vs spreading
 			if genreEnabled {
@@ -772,6 +764,13 @@ func reverseSegment(tracks []playlist.Track, start, end int) {
 
 // orderCrossover (OX) creates offspring by preserving order from parents
 // This is more exploratory than Edge Recombination Crossover, allowing better escape from local optima
+// applyWeightedPenalty normalizes a raw value to [0,1] range and applies a weight
+// This ensures all penalty components have equal influence when weights are equal
+func applyWeightedPenalty(rawValue, maxValue, weight float64) float64 {
+	normalized := rawValue / maxValue
+	return normalized * weight
+}
+
 // Algorithm:
 //  1. Select random substring from parent1 and copy to offspring
 //  2. Fill remaining positions with tracks from parent2 in order, skipping those already present
