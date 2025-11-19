@@ -1,7 +1,7 @@
 # ABOUTME: Build automation for playlist-sorter with PGO and optimization
 # ABOUTME: Handles profile collection, production builds, and installation
 
-.PHONY: help dev profile-collect build-release install clean test lint vuln fmt all check
+.PHONY: help dev profile-collect build-release install clean test lint vuln fmt all check profile profile-cpu
 
 # Default target
 .DEFAULT_GOAL := help
@@ -26,6 +26,8 @@ help:
 	@echo ""
 	@echo "$(YELLOW)Development:$(NC)"
 	@echo "  make dev              Build development binary (with debug info, race detector)"
+	@echo "  make profile          Run memory profiling on morning_chill_dnb.m3u8"
+	@echo "  make profile-cpu      Run CPU profiling on morning_chill_dnb.m3u8"
 	@echo "  make check            Run all checks (fmt + lint + vuln)"
 	@echo "  make fmt              Format code"
 	@echo "  make lint             Run linter"
@@ -51,6 +53,46 @@ dev:
 	@echo "$(GREEN)[DEV]$(NC) Building development binary..."
 	go build -race -o $(BINARY_NAME)-dev
 	@echo "$(GREEN)✓$(NC) Built: $(BINARY_NAME)-dev ($(shell du -h $(BINARY_NAME)-dev | cut -f1))"
+
+## profile: Run memory profiling (no race detector for accurate measurements)
+profile:
+	@echo "$(GREEN)[PROFILE]$(NC) Building binary for profiling (no race detector)..."
+	@go build -o $(BINARY_NAME)-profile
+	@echo "$(YELLOW)→$(NC) Running memory profiling on morning_chill_dnb.m3u8 for 5s..."
+	@timeout 5 ./$(BINARY_NAME)-profile -memprofile=mem.prof morning_chill_dnb.m3u8 > /dev/null 2>&1 || true
+	@if [ -f "mem.prof" ]; then \
+		echo "$(GREEN)✓$(NC) Memory profile collected: mem.prof"; \
+		echo ""; \
+		echo "$(GREEN)Top memory allocations:$(NC)"; \
+		go tool pprof -top -sample_index=alloc_space mem.prof 2>&1 | head -20; \
+		echo ""; \
+		echo "$(YELLOW)View detailed profile:$(NC) go tool pprof -http=:8080 mem.prof"; \
+		rm -f $(BINARY_NAME)-profile; \
+	else \
+		echo "$(RED)✗$(NC) Failed to collect profile"; \
+		rm -f $(BINARY_NAME)-profile; \
+		exit 1; \
+	fi
+
+## profile-cpu: Run CPU profiling (no race detector for accurate measurements)
+profile-cpu:
+	@echo "$(GREEN)[PROFILE]$(NC) Building binary for CPU profiling (no race detector)..."
+	@go build -o $(BINARY_NAME)-profile
+	@echo "$(YELLOW)→$(NC) Running CPU profiling on morning_chill_dnb.m3u8 for 5s..."
+	@timeout 5 ./$(BINARY_NAME)-profile -cpuprofile=cpu.prof morning_chill_dnb.m3u8 > /dev/null 2>&1 || true
+	@if [ -f "cpu.prof" ]; then \
+		echo "$(GREEN)✓$(NC) CPU profile collected: cpu.prof"; \
+		echo ""; \
+		echo "$(GREEN)Top CPU consumers:$(NC)"; \
+		go tool pprof -top cpu.prof 2>&1 | head -20; \
+		echo ""; \
+		echo "$(YELLOW)View detailed profile:$(NC) go tool pprof -http=:8080 cpu.prof"; \
+		rm -f $(BINARY_NAME)-profile; \
+	else \
+		echo "$(RED)✗$(NC) Failed to collect profile"; \
+		rm -f $(BINARY_NAME)-profile; \
+		exit 1; \
+	fi
 
 ## profile-collect: Collect PGO profile by running on test playlist
 profile-collect:

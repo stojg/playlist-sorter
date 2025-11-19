@@ -16,8 +16,6 @@ import (
 	"time"
 
 	"playlist-sorter/playlist"
-
-	"github.com/alitto/pond"
 )
 
 const (
@@ -160,27 +158,31 @@ var (
 // - Position bias (prefers low-energy tracks at start of playlist)
 // - Genre changes (optional, signed weight: positive=cluster, negative=spread)
 func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *SharedConfig, updateChan chan<- GAUpdate) []playlist.Track {
-	startTime := time.Now()
-	gen := 0
-	const populationSize = 100
-	genesLen := len(tracks)
 
-	// Get the initial config snapshot
+	const populationSize = 100
+
+	var (
+		startTime = time.Now()
+		gen       = 0
+		genesLen  = len(tracks)
+	)
+
+	// get the initial config snapshot
 	config := sharedConfig.Get()
 
-	// Pre-calculate fitness score for all possible track pairs so we don't do this in tight loops
+	// pre-calculate fitness score for all possible track pairs so we don't do this in tight loops
 	buildEdgeFitnessCache(tracks)
 
-	// Create worker pool sized to available CPUs for optimal parallelism
-	pool := pond.New(runtime.NumCPU(), populationSize*2)
-	defer pool.StopAndWait()
+	// create worker pool for parallel fitness evaluation
+	pool := NewWorkerPool(runtime.NumCPU())
+	defer pool.Close()
 
-	// Scored population buffer (reused every generation to avoid allocations)
+	// scored population buffer (reused every generation to avoid allocations)
 	scoredPopulation := make([]Individual, populationSize)
 	for i := range scoredPopulation {
 		scoredPopulation[i].Genes = make([]playlist.Track, genesLen)
 	}
-	// Reusable map buffer for orderCrossover (avoids per-call allocation)
+	// reusable map buffer for orderCrossover (avoids per-call allocation)
 	presentMap := make(map[string]bool, genesLen)
 
 	// Pre-allocate all nextGen buffers
@@ -248,13 +250,12 @@ loop:
 
 		// evaluate fitness for each individual playlist (parallelized with worker pool)
 		debugf("[GA] Starting fitness evaluation for gen %d", gen)
-		group := pool.Group()
 		for i := range currentGen {
-			group.Submit(func() {
+			pool.Submit(func() {
 				scoredPopulation[i] = Individual{Genes: currentGen[i], Score: calculateFitness(currentGen[i], config)}
 			})
 		}
-		group.Wait()
+		pool.Wait()
 		debugf("[GA] Fitness evaluation complete for gen %d", gen)
 
 		// Sort population from lowest score (better fit) to highest (worse fit)
@@ -276,13 +277,12 @@ loop:
 				topCount = 2
 			}
 			debugf("[GA] Starting 2-opt for gen %d (topCount=%d)", gen, topCount)
-			group = pool.Group()
 			for i := 0; i < topCount; i++ {
-				group.Submit(func() {
+				pool.Submit(func() {
 					twoOptImprove(scoredPopulation[i].Genes, config)
 				})
 			}
-			group.Wait()
+			pool.Wait()
 			debugf("[GA] 2-opt complete for gen %d", gen)
 		}
 
