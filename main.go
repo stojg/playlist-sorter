@@ -18,12 +18,14 @@ import (
 )
 
 func main() {
-	// Define profiling flags
+	// Define flags
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 	memprofile := flag.String("memprofile", "", "write memory profile to file")
 	view := flag.Bool("view", false, "view playlist with live updates (no optimization)")
 	visual := flag.Bool("visual", false, "run in visual/interactive mode with live parameter tuning")
 	debug := flag.Bool("debug", false, "enable debug logging to playlist-sorter-debug.log")
+	dryRun := flag.Bool("dry-run", false, "preview optimization without writing changes")
+	output := flag.String("output", "", "write sorted playlist to this file (default: overwrite input)")
 	flag.Parse()
 
 	// Enable debug logging if requested
@@ -166,12 +168,20 @@ func main() {
 		log.Printf("Warning: failed to flush output: %v", err)
 	}
 
-	// Write sorted playlist back
-	fmt.Printf("\nWriting sorted playlist to: %s\n", playlistPath)
-	if err := playlist.WritePlaylist(playlistPath, sortedTracks); err != nil {
-		log.Fatalf("Failed to write playlist: %v", err)
+	// Write sorted playlist (or just preview with --dry-run)
+	if *dryRun {
+		fmt.Println("\n--dry-run mode: playlist not modified")
+	} else {
+		outputPath := playlistPath
+		if *output != "" {
+			outputPath = *output
+		}
+		fmt.Printf("\nWriting sorted playlist to: %s\n", outputPath)
+		if err := playlist.WritePlaylist(outputPath, sortedTracks); err != nil {
+			log.Fatalf("Failed to write playlist: %v", err)
+		}
+		fmt.Println("Done!")
 	}
-	fmt.Println("Done!")
 
 	// Write memory profile if requested
 	if *memprofile != "" {
