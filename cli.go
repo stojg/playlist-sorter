@@ -17,6 +17,11 @@ import (
 	"playlist-sorter/playlist"
 )
 
+const (
+	spinnerUpdateInterval = 500 * time.Millisecond // How often to update the spinner animation
+	fitnessImprovementEpsilon = 1e-10 // Threshold for considering fitness improvements significant
+)
+
 // CLIOptions contains options for CLI mode
 type CLIOptions struct {
 	PlaylistPath string
@@ -136,7 +141,7 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, config *Shared
 	// Status line animation and ticker
 	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	spinnerIdx := 0
-	statusTicker := time.NewTicker(500 * time.Millisecond)
+	statusTicker := time.NewTicker(spinnerUpdateInterval)
 	defer statusTicker.Stop()
 
 	// Helper to format elapsed time (right-padded to 6 chars for max "59m59s")
@@ -185,7 +190,7 @@ loop:
 			currentGen = update.Generation
 
 			// Print progress when fitness improves
-			fitnessImproved := update.BestFitness < previousBestFitness-1e-10 // Use epsilon to avoid float precision issues
+			fitnessImproved := update.BestFitness < previousBestFitness-fitnessImprovementEpsilon
 
 			if fitnessImproved {
 				// Clear status line before printing progress

@@ -21,17 +21,24 @@ import (
 const (
 	maxDuration = 1 * time.Hour // Maximum optimization time
 
-	// Genetic algorithm constants
+	// Population parameters
+	populationSize     = 100
+	immigrationRate    = 0.15
+	immigrantSwapsDivisor = 10   // Divide genome length by this to get immigrant swap count
+	elitePercentage    = 0.03
+	tournamentSize     = 3
+
+	// Mutation parameters
 	maxMutationRate    = 0.3
 	minMutationRate    = 0.1
 	mutationDecayGen   = 100.0
 	minSwapMutations   = 2
 	maxSwapMutations   = 5
-	immigrationRate    = 0.15
-	elitePercentage    = 0.03
-	tournamentSize     = 3
+
+	// Local search parameters
 	twoOptStartGen     = 50  // Generation to start applying 2-opt
 	twoOptIntervalGens = 100 // Apply 2-opt every N generations after start
+	floatingPointEpsilon = 1e-10 // Threshold for floating-point comparisons
 )
 
 // Individual represents a candidate solution in the genetic algorithm
@@ -143,8 +150,6 @@ var (
 // - Position bias (prefers low-energy tracks at start of playlist)
 // - Genre changes (optional, signed weight: positive=cluster, negative=spread)
 func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *SharedConfig, progress *Tracker) []playlist.Track {
-
-	const populationSize = 100
 
 	var (
 		startTime = time.Now()
@@ -271,7 +276,7 @@ loop:
 		// Replace the worst individuals with mutated copies of the best individual
 		// This introduces new genetic material while preserving good solutions
 		immigrantCount := int(float64(populationSize) * immigrationRate)
-		immigrantSwaps := genesLen / 10
+		immigrantSwaps := genesLen / immigrantSwapsDivisor
 		if immigrantSwaps < 3 {
 			immigrantSwaps = 3
 		}
@@ -699,7 +704,6 @@ func twoOptImprove(tracks []playlist.Track, config config.GAConfig) {
 
 	// Safety limit to prevent infinite loops from floating point issues
 	const maxIterations = 1000
-	const epsilon = 1e-10
 	iteration := 0
 
 	// Keep iterating until no more improvements found
@@ -734,7 +738,7 @@ func twoOptImprove(tracks []playlist.Track, config config.GAConfig) {
 
 				// If no improvement, undo the reversal and try next segment
 				// Use epsilon threshold to avoid accepting tiny floating point differences
-				if newFitness >= currentFitness-epsilon {
+				if newFitness >= currentFitness-floatingPointEpsilon {
 					reverseSegment(tracks, i, j)
 					continue
 				}

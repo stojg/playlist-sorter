@@ -16,6 +16,10 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+const (
+	maxUndoHistorySize = 50 // Maximum number of undo/redo states to keep
+)
+
 // viewModel holds the state for the read-only playlist viewer
 type viewModel struct {
 	playlistPath string
@@ -28,7 +32,7 @@ type viewModel struct {
 	errorMsg     string
 	ready        bool
 	cursorPos    int             // Currently selected track index
-	undoStack    []playlistState // Undo history (max 50)
+	undoStack    []playlistState // Undo history
 	redoStack    []playlistState // Redo history
 	modified     bool            // Tracks unsaved changes
 }
@@ -250,8 +254,8 @@ func (m *viewModel) saveState() {
 	// Add to undo stack
 	m.undoStack = append(m.undoStack, state)
 
-	// Limit stack to 50 entries
-	if len(m.undoStack) > 50 {
+	// Limit stack size
+	if len(m.undoStack) > maxUndoHistorySize {
 		m.undoStack = m.undoStack[1:]
 	}
 

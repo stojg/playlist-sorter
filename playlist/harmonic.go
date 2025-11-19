@@ -18,6 +18,14 @@ type CamelotKey struct {
 // Compile regex once at package initialization
 var camelotKeyRegex = regexp.MustCompile(`^(\d+)([AB])$`)
 
+// Harmonic distance constants representing DJ mixing compatibility
+const (
+	harmonicPerfect       = 0  // Perfect match: same key
+	harmonicExcellent     = 1  // Excellent: relative major/minor or ±1 number same letter
+	harmonicDramatic      = 2  // Dramatic: parallel major/minor (mood shift)
+	harmonicIncompatible  = 10 // Incompatible: all other transitions
+)
+
 // ParseCamelotKey parses a Camelot key string like "8A" into structured form
 // Returns error if the key format is invalid
 func ParseCamelotKey(key string) (*CamelotKey, error) {
@@ -109,17 +117,17 @@ func IsParallelMajorMinor(k1, k2 *CamelotKey) bool {
 func HarmonicDistanceParsed(k1, k2 *CamelotKey) int {
 	// If either key is invalid, treat as bad transition
 	if k1 == nil || k2 == nil {
-		return 10
+		return harmonicIncompatible
 	}
 
 	// Same key = perfect match
 	if k1.Number == k2.Number && k1.Letter == k2.Letter {
-		return 0
+		return harmonicPerfect
 	}
 
 	// Same number, different letter = relative major/minor (excellent)
 	if k1.Number == k2.Number {
-		return 1
+		return harmonicExcellent
 	}
 
 	// Calculate circular distance between numbers (1-12 wraps around)
@@ -128,18 +136,18 @@ func HarmonicDistanceParsed(k1, k2 *CamelotKey) int {
 
 	// ±1 number with same letter = excellent (smooth energy shift)
 	if circularDist == 1 && k1.Letter == k2.Letter {
-		return 1
+		return harmonicExcellent
 	}
 
 	// Parallel major/minor (same root note, different mode) = dramatic mood shift
 	// Example: C Major (8B) ↔ C Minor (5A) - advanced technique for energy drops
 	if IsParallelMajorMinor(k1, k2) {
-		return 2
+		return harmonicDramatic
 	}
 
 	// Everything else is equally bad (not documented as valid mixing technique)
 	// Whether it's 5A→6B or 5A→12A, if it's not a documented transition, it's harsh
-	return 10
+	return harmonicIncompatible
 }
 
 // HarmonicDistance calculates the harmonic compatibility between two Camelot keys

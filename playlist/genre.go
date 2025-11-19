@@ -103,6 +103,15 @@ var genreHierarchy = map[string]string{
 	"world":      "",
 }
 
+// Genre similarity distance constants (0.0 = identical, 1.0 = completely different)
+const (
+	genreIdentical   = 0.0  // Exact same genre
+	genreParentChild = 0.15 // Parent-child relationship in hierarchy
+	genreSiblings    = 0.3  // Sibling genres (same parent)
+	genreSameRoot    = 0.7  // Share a common ancestor
+	genreUnrelated   = 1.0  // Completely different genres
+)
+
 // GenreSimilarity calculates similarity between two genres
 // Returns 0.0 for identical genres, 1.0 for completely different
 // Uses hierarchical matching: sub-genres are closer than unrelated genres
@@ -114,14 +123,14 @@ func GenreSimilarity(genre1, genre2 string) float64 {
 	// Handle empty genres (treat as completely different)
 	if g1 == "" || g2 == "" {
 		if g1 == g2 {
-			return 0.0 // Both empty = same
+			return genreIdentical // Both empty = same
 		}
-		return 1.0 // One empty = different
+		return genreUnrelated // One empty = different
 	}
 
 	// Exact match
 	if g1 == g2 {
-		return 0.0
+		return genreIdentical
 	}
 
 	// Get ancestor chains
@@ -130,21 +139,21 @@ func GenreSimilarity(genre1, genre2 string) float64 {
 
 	// Check if one is parent of the other
 	if contains(chain1, g2) || contains(chain2, g1) {
-		return 0.15 // Very close (parent/child relationship)
+		return genreParentChild
 	}
 
 	// Check if they share a parent
 	if sharesParent(chain1, chain2) {
-		return 0.3 // Close (siblings in hierarchy)
+		return genreSiblings
 	}
 
 	// Check if they share a grandparent (same root category)
 	if sharesGrandparent(chain1, chain2) {
-		return 0.7 // Somewhat related (same root)
+		return genreSameRoot
 	}
 
 	// Completely unrelated
-	return 1.0
+	return genreUnrelated
 }
 
 // getAncestorChain returns the full ancestry chain for a genre

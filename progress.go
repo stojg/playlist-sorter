@@ -11,6 +11,10 @@ import (
 	"playlist-sorter/playlist"
 )
 
+const (
+	updateIntervalGenerations = 50 // Send updates every N generations (unless fitness improves)
+)
+
 // Tracker tracks progress update state
 type Tracker struct {
 	updateChan   chan<- GAUpdate
@@ -23,7 +27,7 @@ type Tracker struct {
 // SendUpdate sends a progress update to the channel if appropriate
 func (pt *Tracker) SendUpdate(gen int, bestIndividual []playlist.Track, fitnessImproved bool) {
 	// Guard: skip if not time to update or no channel
-	if (!fitnessImproved && gen%50 != 0) || pt.updateChan == nil {
+	if (!fitnessImproved && gen%updateIntervalGenerations != 0) || pt.updateChan == nil {
 		return
 	}
 
