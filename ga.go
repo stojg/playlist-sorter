@@ -178,12 +178,58 @@ func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *Sha
 	currentGen := make([][]playlist.Track, populationSize)
 	nextGen := make([][]playlist.Track, populationSize)
 
-	// Keep first individual as the current playlist order (allows iterative improvement)
-	currentGen[0] = slices.Clone(tracks)
+	// Seed population with greedy solutions for faster convergence
+	// These provide good starting points that already optimize one constraint well
+	currentGen[0] = slices.Clone(tracks) // Current order
 	nextGen[0] = make([]playlist.Track, genesLen)
 
+	// Individual 1: Sort by energy (ascending = smooth flow)
+	if populationSize > 1 {
+		currentGen[1] = slices.Clone(tracks)
+		slices.SortFunc(currentGen[1], func(a, b playlist.Track) int {
+			return a.Energy - b.Energy
+		})
+		nextGen[1] = make([]playlist.Track, genesLen)
+	}
+
+	// Individual 2: Sort by BPM (ascending)
+	if populationSize > 2 {
+		currentGen[2] = slices.Clone(tracks)
+		slices.SortFunc(currentGen[2], func(a, b playlist.Track) int {
+			if a.BPM < b.BPM {
+				return -1
+			} else if a.BPM > b.BPM {
+				return 1
+			}
+			return 0
+		})
+		nextGen[2] = make([]playlist.Track, genesLen)
+	}
+
+	// Individual 3: Sort by Camelot key (1A, 2A, ..., 12A, 1B, ..., 12B)
+	if populationSize > 3 {
+		currentGen[3] = slices.Clone(tracks)
+		slices.SortFunc(currentGen[3], func(a, b playlist.Track) int {
+			if a.ParsedKey == nil && b.ParsedKey == nil {
+				return 0
+			}
+			if a.ParsedKey == nil {
+				return 1
+			}
+			if b.ParsedKey == nil {
+				return -1
+			}
+			// Sort by letter first (A before B), then by number
+			if a.ParsedKey.Letter != b.ParsedKey.Letter {
+				return int(a.ParsedKey.Letter - b.ParsedKey.Letter)
+			}
+			return a.ParsedKey.Number - b.ParsedKey.Number
+		})
+		nextGen[3] = make([]playlist.Track, genesLen)
+	}
+
 	// Initialize the rest with random orderings
-	for i := 1; i < populationSize; i++ {
+	for i := 4; i < populationSize; i++ {
 		currentGen[i] = slices.Clone(tracks)
 		rand.Shuffle(len(currentGen[i]), func(a, b int) {
 			currentGen[i][a], currentGen[i][b] = currentGen[i][b], currentGen[i][a]
