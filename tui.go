@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"playlist-sorter/playlist"
 
@@ -27,23 +28,28 @@ type Parameter struct {
 
 // model holds the TUI state
 type model struct {
-	sharedConfig   *SharedConfig    // Shared config for GA thread-safe access
-	localConfig    *GAConfig        // Local config that params point to (pointer so addresses stay valid)
-	params         []Parameter      // Parameter list with pointers to localConfig fields
-	selectedParam  int              // Currently selected parameter index
-	bestPlaylist   []playlist.Track // Best playlist from GA
-	originalTracks []playlist.Track // Original tracks (for restart in Phase 5)
-	bestFitness    float64          // Current best fitness
-	breakdown      FitnessBreakdown // Fitness breakdown
-	generation     int              // Current generation
-	genPerSec      float64          // Generations per second
-	width          int
-	height         int
-	configPath     string             // Config file path
-	ctx            context.Context    // Context for GA cancellation
-	cancel         context.CancelFunc // Cancel function
-	updateChan     chan GAUpdate      // Channel for GA updates
-	quitting       bool
+	sharedConfig         *SharedConfig    // Shared config for GA thread-safe access
+	localConfig          *GAConfig        // Local config that params point to (pointer so addresses stay valid)
+	params               []Parameter      // Parameter list with pointers to localConfig fields
+	selectedParam        int              // Currently selected parameter index
+	bestPlaylist         []playlist.Track // Best playlist from GA
+	originalTracks       []playlist.Track // Original tracks (for restart in Phase 5)
+	bestFitness          float64          // Current best fitness
+	previousBestFitness  float64          // Fitness at last improvement (for delta calculation)
+	lastImprovementDelta float64          // Fitness improvement amount from last improvement
+	breakdown            FitnessBreakdown // Fitness breakdown
+	generation           int              // Current generation
+	genPerSec            float64          // Generations per second
+	lastImprovementTime  time.Time        // Time of last fitness improvement
+	timeSinceImprovement time.Duration    // Duration since last improvement
+	width                int
+	height               int
+	configPath           string             // Config file path
+	playlistPath         string             // Playlist file path for auto-saving
+	ctx                  context.Context    // Context for GA cancellation
+	cancel               context.CancelFunc // Cancel function
+	updateChan           chan GAUpdate      // Channel for GA updates
+	quitting             bool
 }
 
 // Key bindings
@@ -86,33 +92,33 @@ var keys = keyMap{
 // Styles
 var (
 	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("12"))
+		Bold(true).
+		Foreground(lipgloss.Color("12"))
 
 	paramStyle = lipgloss.NewStyle().
-			Padding(0, 1)
+		Padding(0, 1)
 
 	selectedParamStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("240")).
-				Foreground(lipgloss.Color("15")).
-				Bold(true).
-				Padding(0, 1)
+		Background(lipgloss.Color("240")).
+		Foreground(lipgloss.Color("15")).
+		Bold(true).
+		Padding(0, 1)
 
 	playlistHeaderStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("10"))
+		Bold(true).
+		Foreground(lipgloss.Color("10"))
 
 	statusStyle = lipgloss.NewStyle().
-			Background(lipgloss.Color("236")).
-			Foreground(lipgloss.Color("15")).
-			Padding(0, 1)
+		Background(lipgloss.Color("236")).
+		Foreground(lipgloss.Color("15")).
+		Padding(0, 1)
 
 	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
+		Foreground(lipgloss.Color("241"))
 )
 
 // initModel creates the initial model
-func initModel(tracks []playlist.Track, configPath string) model {
+func initModel(tracks []playlist.Track, configPath string, playlistPath string) model {
 	config, _ := LoadConfig(configPath)
 
 	// Create shared config for thread-safe GA access
@@ -127,37 +133,30 @@ func initModel(tracks []playlist.Track, configPath string) model {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	m := model{
-		sharedConfig:   sharedConfig,
-		localConfig:    localConfig, // Store pointer to config
-		selectedParam:  0,
-		bestPlaylist:   tracks, // Start with original order
-		originalTracks: tracks,
-		configPath:     configPath,
-		ctx:            ctx,
-		cancel:         cancel,
-		updateChan:     make(chan GAUpdate, 10),
+		sharedConfig:        sharedConfig,
+		localConfig:         localConfig, // Store pointer to config
+		selectedParam:       0,
+		bestPlaylist:        tracks, // Start with original order
+		originalTracks:      tracks,
+		configPath:          configPath,
+		playlistPath:        playlistPath,
+		ctx:                 ctx,
+		cancel:              cancel,
+		updateChan:          make(chan GAUpdate, 10),
+		lastImprovementTime: time.Now(), // Initialize to start time
 	}
 
 	// Build parameter list with pointers to localConfig fields
 	// All fitness weights now use [0,1] range due to component normalization
 	m.params = []Parameter{
-		{"Harmonic Weight", &localConfig.HarmonicWeight, nil, 0, 1, 0.05, false},
-		{"Energy Delta Weight", &localConfig.EnergyDeltaWeight, nil, 0, 1, 0.05, false},
-		{"BPM Delta Weight", &localConfig.BPMDeltaWeight, nil, 0, 1, 0.05, false},
+		{"Harmonic Weight", &localConfig.HarmonicWeight, nil, 0, 1, 0.01, false},
+		{"Energy Delta Weight", &localConfig.EnergyDeltaWeight, nil, 0, 1, 0.01, false},
+		{"BPM Delta Weight", &localConfig.BPMDeltaWeight, nil, 0, 1, 0.01, false},
 		{"Genre Weight", &localConfig.GenreWeight, nil, -1, 1, 0.01, false},
-		{"Same Artist Penalty", &localConfig.SameArtistPenalty, nil, 0, 1, 0.05, false},
-		{"Same Album Penalty", &localConfig.SameAlbumPenalty, nil, 0, 1, 0.05, false},
+		{"Same Artist Penalty", &localConfig.SameArtistPenalty, nil, 0, 1, 0.01, false},
+		{"Same Album Penalty", &localConfig.SameAlbumPenalty, nil, 0, 1, 0.01, false},
 		{"Low Energy Bias Portion", &localConfig.LowEnergyBiasPortion, nil, 0, 1, 0.01, false},
-		{"Low Energy Bias Weight", &localConfig.LowEnergyBiasWeight, nil, 0, 1, 0.05, false},
-		{"Max Mutation Rate", &localConfig.MaxMutationRate, nil, 0, 1, 0.01, false},
-		{"Min Mutation Rate", &localConfig.MinMutationRate, nil, 0, 1, 0.01, false},
-		{"Mutation Decay Gen", &localConfig.MutationDecayGen, nil, 10, 1000, 1, false},
-		{"Min Swap Mutations", nil, &localConfig.MinSwapMutations, 1, 20, 1, true},
-		{"Max Swap Mutations", nil, &localConfig.MaxSwapMutations, 1, 50, 1, true},
-		{"Population Size", nil, &localConfig.PopulationSize, 10, 1000, 10, true},
-		{"Immigration Rate", &localConfig.ImmigrationRate, nil, 0, 1, 0.01, false},
-		{"Elite Percentage", &localConfig.ElitePercentage, nil, 0, 1, 0.01, false},
-		{"Tournament Size", nil, &localConfig.TournamentSize, 2, 20, 1, true},
+		{"Low Energy Bias Weight", &localConfig.LowEnergyBiasWeight, nil, 0, 1, 0.01, false},
 	}
 
 	return m
@@ -202,12 +201,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case GAUpdate:
+		// Track fitness improvements for time-since-improvement display
+		if msg.BestFitness < m.bestFitness || m.bestFitness == 0 {
+			// Fitness improved! Calculate delta and update tracking
+			oldFitness := m.bestFitness
+			if oldFitness == 0 {
+				// First update - use the initial fitness as baseline
+				oldFitness = msg.BestFitness
+			}
+			m.lastImprovementDelta = oldFitness - msg.BestFitness
+			m.previousBestFitness = oldFitness
+			m.lastImprovementTime = time.Now()
+		}
+
 		// Update state with GA progress
 		m.bestPlaylist = msg.BestPlaylist
 		m.bestFitness = msg.BestFitness
 		m.breakdown = msg.Breakdown
 		m.generation = msg.Generation
 		m.genPerSec = msg.GenPerSec
+		m.timeSinceImprovement = time.Since(m.lastImprovementTime)
+
+		// Auto-save the best playlist to disk
+		if len(m.bestPlaylist) > 0 {
+			_ = playlist.WritePlaylist(m.playlistPath, m.bestPlaylist)
+		}
 
 		// Queue next update
 		return m, waitForGAUpdate(m.updateChan)
@@ -308,15 +326,6 @@ func (m *model) resetToDefaults() {
 	*m.params[5].Value = defaults.SameAlbumPenalty
 	*m.params[6].Value = defaults.LowEnergyBiasPortion
 	*m.params[7].Value = defaults.LowEnergyBiasWeight
-	*m.params[8].Value = defaults.MaxMutationRate
-	*m.params[9].Value = defaults.MinMutationRate
-	*m.params[10].Value = defaults.MutationDecayGen
-	*m.params[11].IntValue = defaults.MinSwapMutations
-	*m.params[12].IntValue = defaults.MaxSwapMutations
-	*m.params[13].IntValue = defaults.PopulationSize
-	*m.params[14].Value = defaults.ImmigrationRate
-	*m.params[15].Value = defaults.ElitePercentage
-	*m.params[16].IntValue = defaults.TournamentSize
 
 	// Sync to GA
 	m.syncConfigToGA()
@@ -359,7 +368,7 @@ func (m model) View() string {
 func (m model) renderParameters() string {
 	var s string
 
-	s += titleStyle.Render("Algorithm Parameters") + "\n\n"
+	s += titleStyle.Render("Algorithm parameters") + "\n\n"
 
 	for i, param := range m.params {
 		var value string
@@ -390,7 +399,7 @@ func (m model) renderParameters() string {
 func (m model) renderPlaylist() string {
 	var s string
 
-	s += titleStyle.Render("Best Playlist Preview") + "\n\n"
+	s += titleStyle.Render("Current best playlist") + "\n\n"
 
 	// Header
 	s += playlistHeaderStyle.Render(fmt.Sprintf("%-3s %-4s %-4s %-3s %-20s %-30s %-20s %-15s", "#", "Key", "BPM", "Eng", "Artist", "Title", "Album", "Genre")) + "\n"
@@ -424,10 +433,21 @@ func (m model) renderPlaylist() string {
 
 // renderStatus renders the status bar
 func (m model) renderStatus() string {
-	status := fmt.Sprintf("Gen: %d | Fitness: %.2f | Speed: %.1f gen/s",
+	// Format time since improvement in a readable way
+	timeSince := m.timeSinceImprovement.Round(time.Second)
+
+	// Show delta if we have improvement data
+	deltaStr := ""
+	if m.lastImprovementDelta != 0 {
+		deltaStr = fmt.Sprintf(" | -%0.8f", m.lastImprovementDelta)
+	}
+
+	status := fmt.Sprintf("Gen: %d (%.1f gen/s) | Fitness: %.8f | %s ago%s",
 		m.generation,
-		m.bestFitness,
 		m.genPerSec,
+		m.bestFitness,
+		timeSince,
+		deltaStr,
 	)
 	return statusStyle.Width(m.width).Render(status)
 }
@@ -438,7 +458,7 @@ func (m model) renderBreakdown() string {
 		// No breakdown available yet
 		return ""
 	}
-	breakdown := fmt.Sprintf("Breakdown: Harmonic: %.4f | Energy: %.4f | BPM: %.4f | Genre: %.4f | Artist: %.4f | Album: %.4f | Bias: %.4f",
+	breakdown := fmt.Sprintf(" Harmonic: %.4f | Energy: %.4f | BPM: %.4f | Genre: %.4f | Artist: %.4f | Album: %.4f | Bias: %.4f",
 		m.breakdown.Harmonic,
 		m.breakdown.EnergyDelta,
 		m.breakdown.BPMDelta,
@@ -449,16 +469,9 @@ func (m model) renderBreakdown() string {
 	)
 	return helpStyle.Render(breakdown)
 }
-
-// renderSparkline renders a simple ASCII sparkline of fitness history (Phase 6)
-func (m model) renderSparkline() string {
-	// TODO: Implement in Phase 6
-	return ""
-}
-
 // renderHelp renders the help text
 func (m model) renderHelp() string {
-	return helpStyle.Render("↑/↓: select param | ←/→: adjust value | d: reset defaults | q: quit & save")
+	return helpStyle.Render(" ↑/↓: select param | ←/→: adjust value | d: reset defaults | q: quit & save")
 }
 
 // RunTUI starts the TUI mode
@@ -468,8 +481,8 @@ func RunTUI(playlistPath string) error {
 		return fmt.Errorf("failed to init debug log: %w", err)
 	}
 
-	// Load playlist
-	tracks, err := playlist.LoadPlaylistWithMetadata(playlistPath)
+	// Load playlist (silent - no progress messages)
+	tracks, err := playlist.LoadPlaylistWithMetadata(playlistPath, false)
 	if err != nil {
 		return fmt.Errorf("failed to load playlist: %w", err)
 	}
@@ -483,12 +496,21 @@ func RunTUI(playlistPath string) error {
 	configPath := GetConfigPath()
 
 	// Create model
-	m := initModel(tracks, configPath)
+	m := initModel(tracks, configPath, playlistPath)
 
 	// Run program
 	p := tea.NewProgram(m, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
+	finalModel, err := p.Run()
+	if err != nil {
 		return fmt.Errorf("TUI error: %w", err)
+	}
+
+	// Save the optimized playlist on exit
+	if m, ok := finalModel.(model); ok && len(m.bestPlaylist) > 0 {
+		if err := playlist.WritePlaylist(playlistPath, m.bestPlaylist); err != nil {
+			return fmt.Errorf("failed to save playlist: %w", err)
+		}
+		fmt.Printf("\nSaved optimized playlist to: %s\n", playlistPath)
 	}
 
 	return nil

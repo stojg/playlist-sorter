@@ -44,27 +44,31 @@ func ReadPlaylist(path string) ([]Track, error) {
 
 // LoadPlaylistWithMetadata reads a playlist and fetches metadata from beets for each track
 // Tracks that fail to load metadata are filtered out and not included in the result
-// Displays progress as it fetches metadata for each track
-func LoadPlaylistWithMetadata(path string) ([]Track, error) {
+// Displays progress as it fetches metadata for each track if verbose is true
+func LoadPlaylistWithMetadata(path string, verbose bool) ([]Track, error) {
 	tracks, err := ReadPlaylist(path)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Printf("Loading metadata for %d tracks...\n", len(tracks))
+	if verbose {
+		fmt.Printf("Loading metadata for %d tracks...\n", len(tracks))
+	}
 
 	// Fetch metadata for each track, filtering out failures
 	validTracks := make([]Track, 0, len(tracks))
 	skippedCount := 0
 
 	for i := range tracks {
-		if (i+1)%10 == 0 {
+		if verbose && (i+1)%10 == 0 {
 			fmt.Printf("[+] Processed %d/%d tracks...\n", i+1, len(tracks))
 		}
 
 		metadata, err := GetTrackMetadata(tracks[i].Path)
 		if err != nil {
-			fmt.Printf("[!] Skipping track (could not load metadata): %s: %v\n", tracks[i].Path, err)
+			if verbose {
+				fmt.Printf("[!] Skipping track (could not load metadata): %s: %v\n", tracks[i].Path, err)
+			}
 			skippedCount++
 			continue
 		}

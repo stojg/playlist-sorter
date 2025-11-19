@@ -24,43 +24,19 @@ type GAConfig struct {
 	// Position bias
 	LowEnergyBiasPortion float64 `toml:"low_energy_bias_portion"`
 	LowEnergyBiasWeight  float64 `toml:"low_energy_bias_weight"`
-
-	// Mutation parameters
-	MaxMutationRate  float64 `toml:"max_mutation_rate"`
-	MinMutationRate  float64 `toml:"min_mutation_rate"`
-	MutationDecayGen float64 `toml:"mutation_decay_gen"`
-	MinSwapMutations int     `toml:"min_swap_mutations"`
-	MaxSwapMutations int     `toml:"max_swap_mutations"`
-
-	// Population parameters
-	PopulationSize  int     `toml:"population_size"`
-	ImmigrationRate float64 `toml:"immigration_rate"`
-	ElitePercentage float64 `toml:"elite_percentage"`
-	TournamentSize  int     `toml:"tournament_size"`
 }
 
 // DefaultConfig returns the default GA configuration with normalized fitness weights
-// All fitness weights are now in [0,1] range due to component normalization
-// Setting all weights to 0.5 gives equal importance to all components
 func DefaultConfig() GAConfig {
 	return GAConfig{
-		HarmonicWeight:       0.5,
-		SameArtistPenalty:    0.5,
-		SameAlbumPenalty:     0.5,
-		EnergyDeltaWeight:    0.5,
-		BPMDeltaWeight:       0.5,
-		GenreWeight:          0.0, // Neutral: 0=ignore, +ve=cluster, -ve=spread
+		HarmonicWeight:       0.3,
+		SameArtistPenalty:    0.2,
+		SameAlbumPenalty:     0.2,
+		EnergyDeltaWeight:    0.3,
+		BPMDeltaWeight:       0.1,
+		GenreWeight:          0.0,
 		LowEnergyBiasPortion: 0.2,
 		LowEnergyBiasWeight:  0.0,
-		MaxMutationRate:      0.3,
-		MinMutationRate:      0.1,
-		MutationDecayGen:     100.0,
-		MinSwapMutations:     2,
-		MaxSwapMutations:     5,
-		PopulationSize:       100,
-		ImmigrationRate:      0.05,
-		ElitePercentage:      0.03, // Reduced from 0.1 to reduce 2-opt memory copying overhead
-		TournamentSize:       3,
 	}
 }
 
@@ -132,11 +108,6 @@ func roundConfigPrecision(config GAConfig) GAConfig {
 	config.GenreWeight = round(config.GenreWeight)
 	config.LowEnergyBiasPortion = round(config.LowEnergyBiasPortion)
 	config.LowEnergyBiasWeight = round(config.LowEnergyBiasWeight)
-	config.MaxMutationRate = round(config.MaxMutationRate)
-	config.MinMutationRate = round(config.MinMutationRate)
-	config.MutationDecayGen = round(config.MutationDecayGen)
-	config.ImmigrationRate = round(config.ImmigrationRate)
-	config.ElitePercentage = round(config.ElitePercentage)
 
 	return config
 }

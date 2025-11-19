@@ -46,13 +46,46 @@ func (k *CamelotKey) String() string {
 	return fmt.Sprintf("%d%c", k.Number, k.Letter)
 }
 
+// IsParallelMajorMinor detects if two keys are parallel major/minor (same root note, different mode)
+// For example: C Major (8B) ↔ C Minor (5A), F Major (7B) ↔ F Minor (4A)
+// This represents a dramatic mood shift according to harmonic mixing theory
+// The Camelot wheel pattern: xA (minor) ↔ (x+3)B (major) with wraparound
+func IsParallelMajorMinor(k1, k2 *CamelotKey) bool {
+	if k1 == nil || k2 == nil {
+		return false
+	}
+
+	// Keys must have different letters (one A, one B)
+	if k1.Letter == k2.Letter {
+		return false
+	}
+
+	// Check if k1 is A (minor) and k2 is the parallel B (major)
+	if k1.Letter == 'A' {
+		parallelMajor := (k1.Number+2)%12 + 1
+		if k2.Number == parallelMajor {
+			return true
+		}
+	}
+
+	// Check if k1 is B (major) and k2 is the parallel A (minor)
+	if k1.Letter == 'B' {
+		parallelMinor := (k1.Number+8)%12 + 1 // Equivalent to (k1.Number - 3 + 12) % 12 + 1
+		if k2.Number == parallelMinor {
+			return true
+		}
+	}
+
+	return false
+}
+
 // HarmonicDistanceParsed calculates harmonic compatibility using pre-parsed keys
 // This is much faster than HarmonicDistance as it skips parsing
-// Returns 999 if either key is nil
+// Returns 10 if either key is nil (same as other bad transitions)
 func HarmonicDistanceParsed(k1, k2 *CamelotKey) int {
-	// If either key is invalid, return large distance
+	// If either key is invalid, treat as bad transition
 	if k1 == nil || k2 == nil {
-		return 999
+		return 10
 	}
 
 	// Same key = perfect match
@@ -69,29 +102,31 @@ func HarmonicDistanceParsed(k1, k2 *CamelotKey) int {
 	diff := abs(k1.Number - k2.Number)
 	circularDist := min(diff, 12-diff)
 
-	// ±1 number with same letter = excellent
+	// ±1 number with same letter = excellent (smooth energy shift)
 	if circularDist == 1 && k1.Letter == k2.Letter {
 		return 1
 	}
 
-	// ±1 number with different letter = acceptable but not ideal
-	if circularDist == 1 {
-		return 3
+	// Parallel major/minor (same root note, different mode) = dramatic mood shift
+	// Example: C Major (8B) ↔ C Minor (5A) - advanced technique for energy drops
+	if IsParallelMajorMinor(k1, k2) {
+		return 2
 	}
 
-	// Everything else scales with distance
-	return circularDist + 1
+	// Everything else is equally bad (not documented as valid mixing technique)
+	// Whether it's 5A→6B or 5A→12A, if it's not a documented transition, it's harsh
+	return 10
 }
 
 // HarmonicDistance calculates the harmonic compatibility between two Camelot keys
 // Returns a score where:
 //
 //	0 = perfect match (same key)
-//	1 = excellent (±1 number OR relative major/minor)
-//	3 = acceptable (±1 number with different letter)
-//	higher = less compatible
+//	1 = excellent (±1 same letter OR relative major/minor)
+//	2 = dramatic mood shift (parallel major/minor, e.g., 8B ↔ 5A)
+//	10 = bad (any other transition, including invalid/missing keys)
 //
-// Returns 999 for invalid keys
+// Based on official Camelot mixing documentation
 func HarmonicDistance(key1, key2 string) int {
 	k1, err1 := ParseCamelotKey(key1)
 	k2, err2 := ParseCamelotKey(key2)

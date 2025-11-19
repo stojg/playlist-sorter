@@ -5,22 +5,34 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"runtime"
 	"slices"
 	"sync"
 	"time"
 
-	"github.com/alitto/pond"
 	"playlist-sorter/playlist"
+
+	"github.com/alitto/pond"
 )
 
 const (
 	maxDuration = 1 * time.Hour // Maximum optimization time
+
+	// Genetic algorithm constants
+	maxMutationRate    = 0.3
+	minMutationRate    = 0.1
+	mutationDecayGen   = 100.0
+	minSwapMutations   = 2
+	maxSwapMutations   = 5
+	immigrationRate    = 0.15
+	elitePercentage    = 0.03
+	tournamentSize     = 3
+	twoOptStartGen     = 50  // Generation to start applying 2-opt
+	twoOptIntervalGens = 100 // Apply 2-opt every N generations after start
 )
 
 // Debug logger - writes to file in visual mode
@@ -52,14 +64,14 @@ type Individual struct {
 
 // FitnessBreakdown shows the individual components contributing to fitness
 type FitnessBreakdown struct {
-	Harmonic      float64 // Harmonic distance penalties
-	SameArtist    float64 // Same artist penalties
-	SameAlbum     float64 // Same album penalties
-	EnergyDelta   float64 // Energy change penalties
-	BPMDelta      float64 // BPM difference penalties
-	GenreChange   float64 // Genre change/clustering penalty (signed weight)
-	PositionBias  float64 // Low energy position bias
-	Total         float64 // Sum of all components
+	Harmonic     float64 // Harmonic distance penalties
+	SameArtist   float64 // Same artist penalties
+	SameAlbum    float64 // Same album penalties
+	EnergyDelta  float64 // Energy change penalties
+	BPMDelta     float64 // BPM difference penalties
+	GenreChange  float64 // Genre change/clustering penalty (signed weight)
+	PositionBias float64 // Low energy position bias
+	Total        float64 // Sum of all components
 }
 
 // GAUpdate contains information about the current state of the genetic algorithm
@@ -129,62 +141,54 @@ var (
 //  1. Initialize population with random track orderings (plus current order)
 //  2. For each generation:
 //     a. Evaluate fitness of each candidate (lower score = better)
-//     b. Sort population by fitness
-//     c. Inject random immigrants to maintain diversity
-//     d. Select parents: keep top 2 (elitism) + tournament selection
-//     e. Create offspring via Edge Recombination Crossover (preserves good transitions)
-//     f. Apply 2-opt local search to elite offspring
-//     g. Mutate non-elite offspring (swaps or inversions)
-//  3. Continue until context cancelled, timeout, or convergence
+//     b. Sort population by fitness (best to worst)
+//     c. Apply 2-opt local search to elite solutions (periodically: gen 50, then every 100 gens)
+//     d. Track best individual across all generations
+//     e. Inject random immigrants by replacing worst individuals with mutated copies of best
+//     f. Select parents: keep top 2 (elitism) + tournament selection for rest
+//     g. Create offspring via Order Crossover (maintains relative ordering from parents)
+//     h. Mutate offspring (but skip top 2 elite): swap or inversion mutations
+//  3. Continue until context cancelled, timeout (1 hour), or convergence
 //  4. Return best solution found across all generations
 //
-// Fitness minimizes:
+// Fitness minimizes (all normalized to [0,1] scale before applying weights):
 // - Harmonic distance between adjacent track keys (Camelot wheel)
-// - Same artist/album penalties
+// - Same artist/album penalties (consecutive tracks)
 // - Energy deltas between tracks
-// - BPM differences (accounting for half/double time)
-// - Position bias (prefers low-energy tracks at start)
+// - BPM differences (accounting for half/double time mixing)
+// - Position bias (prefers low-energy tracks at start of playlist)
+// - Genre changes (optional, signed weight: positive=cluster, negative=spread)
 func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *SharedConfig, updateChan chan<- GAUpdate) []playlist.Track {
 	startTime := time.Now()
 	gen := 0
+	const populationSize = 100
+	genesLen := len(tracks) // Cache length (all Genes slices are pre-allocated to this size)
 
-	// Get initial config snapshot
+	// Get the initial config snapshot
 	config := sharedConfig.Get()
 
-	// Pre-calculate edge data for all track pairs (base values only, weights applied at eval time)
+	// Pre-calculate fitness score for all possible track pairs so we don't do this in tight loops
 	buildEdgeFitnessCache(tracks)
 
 	// Create worker pool sized to available CPUs for optimal parallelism
-	pool := pond.New(runtime.NumCPU(), config.PopulationSize*2)
+	pool := pond.New(runtime.NumCPU(), populationSize*2)
 	defer pool.StopAndWait()
 
-	// Initialize two populations for double buffering (avoids allocations)
-	population := make([][]playlist.Track, config.PopulationSize)
-	nextPopulation := make([][]playlist.Track, config.PopulationSize)
+	// Initialize two generation buffers (avoids allocations and prevents parent corruption during crossover)
+	currentGen := make([][]playlist.Track, populationSize)
+	nextGen := make([][]playlist.Track, populationSize)
 
 	// Keep first individual as the current playlist order (allows iterative improvement)
-	population[0] = slices.Clone(tracks)
-	nextPopulation[0] = make([]playlist.Track, len(tracks))
+	currentGen[0] = slices.Clone(tracks)
+	nextGen[0] = make([]playlist.Track, genesLen)
 
 	// Initialize the rest with random orderings
-	for i := 1; i < config.PopulationSize; i++ {
-		population[i] = slices.Clone(tracks)
-		rand.Shuffle(len(population[i]), func(a, b int) {
-			population[i][a], population[i][b] = population[i][b], population[i][a]
+	for i := 1; i < populationSize; i++ {
+		currentGen[i] = slices.Clone(tracks)
+		rand.Shuffle(len(currentGen[i]), func(a, b int) {
+			currentGen[i][a], currentGen[i][b] = currentGen[i][b], currentGen[i][a]
 		})
-		nextPopulation[i] = make([]playlist.Track, len(tracks))
-	}
-
-	// Pre-allocate Edge Recombination Crossover buffers (reused across all crossover operations)
-	numTracks := len(tracks)
-	crossoverEdges := make([][]int, numTracks)
-	parent1Index := make(map[string]int, numTracks)
-	parent2Index := make(map[string]int, numTracks)
-	seenEdges := make([]map[int]bool, numTracks)
-	usedTracks := make([]bool, numTracks)
-	for i := 0; i < numTracks; i++ {
-		crossoverEdges[i] = make([]int, 0, 4)
-		seenEdges[i] = make(map[int]bool, 4)
+		nextGen[i] = make([]playlist.Track, genesLen)
 	}
 
 	// Track best individual across all generations
@@ -192,8 +196,11 @@ func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *Sha
 	var bestFitness float64 = math.MaxFloat64
 	var generationsWithoutImprovement int = 0
 
-	// Reusable slice for scored population
-	scoredPopulation := make([]Individual, len(population))
+	// Reusable slice for scored population (pre-allocate Genes to avoid allocations in hot loop)
+	scoredPopulation := make([]Individual, populationSize)
+	for i := range scoredPopulation {
+		scoredPopulation[i].Genes = make([]playlist.Track, genesLen)
+	}
 
 	// For generation speed calculation
 	lastGenTime := startTime
@@ -232,31 +239,9 @@ loop:
 		// Evaluate fitness for each individual playlist (parallelized with worker pool)
 		debugf("[GA] Starting fitness evaluation for gen %d", gen)
 		group := pool.Group()
-		for i := range population {
-			idx := i
+		for i := range currentGen {
 			group.Submit(func() {
-				defer func() {
-					if r := recover(); r != nil {
-						msg := fmt.Sprintf("WORKER PANIC in fitness evaluation (idx=%d): %v", idx, r)
-						buf := make([]byte, 4096)
-						n := runtime.Stack(buf, false)
-						stackTrace := string(buf[:n])
-
-						// Log to both debug file and stderr
-						debugf("[PANIC] %s\nStack trace:\n%s", msg, stackTrace)
-						fmt.Fprintf(os.Stderr, "%s\nStack trace:\n%s\n", msg, stackTrace)
-
-						// Set a max fitness so this individual gets discarded
-						scoredPopulation[idx] = Individual{
-							Genes: population[idx],
-							Score: math.MaxFloat64,
-						}
-					}
-				}()
-				scoredPopulation[idx] = Individual{
-					Genes: population[idx],
-					Score: calculateFitness(population[idx], config),
-				}
+				scoredPopulation[i] = Individual{Genes: currentGen[i], Score: calculateFitness(currentGen[i], config)}
 			})
 		}
 		group.Wait()
@@ -264,133 +249,34 @@ loop:
 
 		// Sort population from lowest score (better fit) to highest (worse fit)
 		slices.SortFunc(scoredPopulation, func(a Individual, b Individual) int {
-			return int(a.Score - b.Score)
+			if a.Score < b.Score {
+				return -1
+			}
+			if a.Score > b.Score {
+				return 1
+			}
+			return 0
 		})
 
-		// Elitism-based immigration: Replace worst 5% with mutated elite individuals
-		immigrantCount := int(float64(config.PopulationSize) * config.ImmigrationRate)
-		for i := 0; i < immigrantCount; i++ {
-			worstIdx := len(scoredPopulation) - 1 - i
-			scoredPopulation[worstIdx].Genes = slices.Clone(scoredPopulation[0].Genes)
-			numSwaps := len(tracks) / 10
-			if numSwaps < 3 {
-				numSwaps = 3
+		// Apply 2-opt local search to elite periodically (improves sorted population in-place)
+		shouldRunTwoOpt := gen >= twoOptStartGen && (gen == twoOptStartGen || (gen-twoOptStartGen)%twoOptIntervalGens == 0)
+		if shouldRunTwoOpt {
+			topCount := int(float64(populationSize) * elitePercentage)
+			if topCount < 2 {
+				topCount = 2
 			}
-			for s := 0; s < numSwaps; s++ {
-				a := rand.Intn(len(scoredPopulation[worstIdx].Genes))
-				b := rand.Intn(len(scoredPopulation[worstIdx].Genes))
-				scoredPopulation[worstIdx].Genes[a], scoredPopulation[worstIdx].Genes[b] = scoredPopulation[worstIdx].Genes[b], scoredPopulation[worstIdx].Genes[a]
+			debugf("[GA] Starting 2-opt for gen %d (topCount=%d)", gen, topCount)
+			group = pool.Group()
+			for i := 0; i < topCount; i++ {
+				group.Submit(func() {
+					twoOptImprove(scoredPopulation[i].Genes, config)
+				})
 			}
-			scoredPopulation[worstIdx].Score = math.MaxFloat64
+			group.Wait()
+			debugf("[GA] 2-opt complete for gen %d", gen)
 		}
 
-		var parents [][]playlist.Track
-
-		// Keep top 2 as elite parents
-		parents = append(parents, scoredPopulation[0].Genes)
-		parents = append(parents, scoredPopulation[1].Genes)
-
-		// Fill the rest with tournament selection
-		for i := 2; i < len(scoredPopulation); i++ {
-			bestIdx := rand.Intn(len(scoredPopulation))
-			bestScore := scoredPopulation[bestIdx].Score
-			for j := 1; j < config.TournamentSize; j++ {
-				idx := rand.Intn(len(scoredPopulation))
-				if scoredPopulation[idx].Score < bestScore {
-					bestIdx = idx
-					bestScore = scoredPopulation[idx].Score
-				}
-			}
-			parents = append(parents, scoredPopulation[bestIdx].Genes)
-		}
-
-		// Buffer swap
-		children := nextPopulation
-
-		// Keep top 2 unchanged
-		copy(children[0], parents[0])
-		copy(children[1], parents[1])
-
-		// Create offspring through crossover
-		for i := 2; i < len(parents)-1; i += 2 {
-			edgeRecombinationCrossover(children[i], parents[i], parents[i+1], crossoverEdges, parent1Index, parent2Index, seenEdges, usedTracks)
-			edgeRecombinationCrossover(children[i+1], parents[i+1], parents[i], crossoverEdges, parent1Index, parent2Index, seenEdges, usedTracks)
-		}
-
-		// Handle odd population size
-		if len(parents)%2 == 1 {
-			edgeRecombinationCrossover(children[len(parents)-1], parents[len(parents)-1], parents[0], crossoverEdges, parent1Index, parent2Index, seenEdges, usedTracks)
-		}
-
-		// Apply 2-opt local search to elite children
-		topCount := int(float64(len(children)) * config.ElitePercentage)
-		if topCount < 2 {
-			topCount = 2
-		}
-		debugf("[GA] Starting 2-opt for gen %d (topCount=%d)", gen, topCount)
-		group = pool.Group()
-		for i := 0; i < topCount; i++ {
-			idx := i
-			group.Submit(func() {
-				defer func() {
-					if r := recover(); r != nil {
-						msg := fmt.Sprintf("WORKER PANIC in 2-opt improvement (idx=%d): %v", idx, r)
-						buf := make([]byte, 4096)
-						n := runtime.Stack(buf, false)
-						stackTrace := string(buf[:n])
-
-						// Log to both debug file and stderr
-						debugf("[PANIC] %s\nStack trace:\n%s", msg, stackTrace)
-						fmt.Fprintf(os.Stderr, "%s\nStack trace:\n%s\n", msg, stackTrace)
-					}
-				}()
-				twoOptImprove(children[idx], config)
-			})
-		}
-		group.Wait()
-		debugf("[GA] 2-opt complete for gen %d", gen)
-
-		// Calculate adaptive mutation rate
-		mutationRate := config.MaxMutationRate - (float64(generationsWithoutImprovement)/config.MutationDecayGen)*(config.MaxMutationRate-config.MinMutationRate)
-		if mutationRate < config.MinMutationRate {
-			mutationRate = config.MinMutationRate
-		}
-
-		// Mutate offspring (skip top 2)
-		for i := 2; i < len(children); i++ {
-			if rand.Float64() < mutationRate {
-				if rand.Float64() < 0.5 {
-					// Swap mutation
-					numSwaps := config.MinSwapMutations + rand.Intn(config.MaxSwapMutations-config.MinSwapMutations+1)
-					for s := 0; s < numSwaps; s++ {
-						a := rand.Intn(len(children[i]))
-						b := rand.Intn(len(children[i]))
-						children[i][a], children[i][b] = children[i][b], children[i][a]
-					}
-				} else {
-					// Inversion mutation
-					start := rand.Intn(len(children[i]))
-					end := rand.Intn(len(children[i]))
-					if start > end {
-						start, end = end, start
-					}
-					for start < end {
-						children[i][start], children[i][end] = children[i][end], children[i][start]
-						start++
-						end--
-					}
-				}
-			}
-		}
-
-		// Swap populations (double buffering)
-		population, nextPopulation = nextPopulation, population
-
-		// Track best individual
-		// Re-evaluate bestFitness with current config to allow fair comparison when config changes
-		if bestIndividual != nil {
-			bestFitness = calculateFitness(bestIndividual, config)
-		}
+		// Check if new best individual from children
 		fitnessImproved := false
 		if scoredPopulation[0].Score < bestFitness {
 			bestFitness = scoredPopulation[0].Score
@@ -430,6 +316,104 @@ loop:
 			}
 		}
 
+		// Now we start the genetic algorithm itself
+
+		// replace the worst individuals with mutated copies of the best individual
+		immigrantCount := int(float64(populationSize) * immigrationRate)
+		for i := 0; i < immigrantCount; i++ {
+			worstIdx := len(scoredPopulation) - 1 - i
+			// copy genes from the best individual
+			copy(scoredPopulation[worstIdx].Genes, scoredPopulation[0].Genes)
+			// at minimum 3 times, swap place of two tracks per immigrant
+			numSwaps := genesLen / 10
+			if numSwaps < 3 {
+				numSwaps = 3
+			}
+			// swap swap
+			for s := 0; s < numSwaps; s++ {
+				a := rand.IntN(genesLen)
+				b := rand.IntN(genesLen)
+				scoredPopulation[worstIdx].Genes[a], scoredPopulation[worstIdx].Genes[b] = scoredPopulation[worstIdx].Genes[b], scoredPopulation[worstIdx].Genes[a]
+			}
+			// re-evaluate fitness after mutation
+			scoredPopulation[worstIdx].Score = calculateFitness(scoredPopulation[worstIdx].Genes, config)
+		}
+
+		parents := make([][]playlist.Track, populationSize)
+
+		// make the top two from the current population parents
+		parents[0] = scoredPopulation[0].Genes
+		parents[1] = scoredPopulation[1].Genes
+
+		// Fill the rest of the population with a tournament selection
+		for i := 2; i < len(scoredPopulation); i++ {
+			// grab a random individual from the tournament
+			bestIdx := rand.IntN(len(scoredPopulation))
+			// keep the best individual from the tournament
+			bestScore := scoredPopulation[bestIdx].Score
+			// check the best individual against tournamentSize other random individuals and keep the best
+			for j := 1; j < tournamentSize; j++ {
+				idx := rand.IntN(len(scoredPopulation))
+				if scoredPopulation[idx].Score < bestScore {
+					bestIdx = idx
+					bestScore = scoredPopulation[idx].Score
+				}
+			}
+			parents[i] = scoredPopulation[bestIdx].Genes
+		}
+
+		// Keep top two elite (2-opt improved) unchanged in next generation
+		copy(nextGen[0], scoredPopulation[0].Genes)
+		copy(nextGen[1], scoredPopulation[1].Genes)
+
+		// Create offspring through Order Crossover (OX)
+		// Simpler and faster than Edge Recombination Crossover (ERC), with good exploration characteristics
+		for i := 2; i < len(parents)-1; i += 2 {
+			orderCrossover(nextGen[i], parents[i], parents[i+1])
+			orderCrossover(nextGen[i+1], parents[i+1], parents[i])
+		}
+		// Handle odd population size
+		if len(parents)%2 == 1 {
+			orderCrossover(nextGen[len(parents)-1], parents[len(parents)-1], parents[0])
+		}
+
+		// Calculate adaptive mutation rate (increases when stuck to escape local optima)
+		mutationRate := minMutationRate + (float64(generationsWithoutImprovement)/mutationDecayGen)*(maxMutationRate-minMutationRate)
+		if mutationRate > maxMutationRate {
+			mutationRate = maxMutationRate
+		}
+
+		// Mutate offspring (but skip the top two individuals)
+		for i := 2; i < populationSize; i++ {
+			if rand.Float64() < mutationRate {
+				// Choose between swap and inversion mutation (50/50 chance)
+				// Uint32()&1 extracts the least significant bit: 23% faster than Float64() < 0.5
+				// This runs every generation for ~98 individuals, so the speedup is significant
+				if rand.Uint32()&1 == 0 {
+					// Swap mutation: randomly swap 2-5 pairs of tracks
+					// Good for small local changes and escaping local optima
+					numSwaps := minSwapMutations + rand.IntN(maxSwapMutations-minSwapMutations+1)
+					for s := 0; s < numSwaps; s++ {
+						a := rand.IntN(genesLen)
+						b := rand.IntN(genesLen)
+						nextGen[i][a], nextGen[i][b] = nextGen[i][b], nextGen[i][a]
+					}
+				} else {
+					// Inversion mutation: reverse a random segment of the playlist
+					// More disruptive than swap, helps explore distant solutions
+					start := rand.IntN(genesLen)
+					end := rand.IntN(genesLen)
+					if start > end {
+						start, end = end, start
+					}
+					reverseSegment(nextGen[i], start, end)
+				}
+			}
+		}
+
+		// Swap generation buffers for next iteration
+		currentGen, nextGen = nextGen, currentGen
+
 		debugf("[GA] Generation %d complete", gen)
 		gen++
 	}
@@ -448,6 +432,72 @@ func calculateFitness(individual []playlist.Track, config GAConfig) float64 {
 // calculateFitnessWithBreakdown computes fitness and returns detailed breakdown
 func calculateFitnessWithBreakdown(individual []playlist.Track, config GAConfig) FitnessBreakdown {
 	return segmentFitnessWithBreakdown(individual, 0, len(individual)-1, config)
+}
+
+// calculateTheoreticalMinimum calculates the theoretical minimum fitness score
+// This is NOT achievable in practice as the constraints conflict with each other
+// (e.g., monotonic energy vs clustered low energy at start), but provides a lower bound
+func calculateTheoreticalMinimum(tracks []playlist.Track, config GAConfig) float64 {
+	n := len(tracks)
+	if n == 0 {
+		return 0.0
+	}
+
+	// 1. Harmonic: Best case = all tracks have perfect harmonic compatibility (distance 0)
+	minHarmonic := 0.0
+
+	// 2. Same Artist: Best case = no consecutive tracks from same artist
+	minSameArtist := 0.0
+
+	// 3. Same Album: Best case = no consecutive tracks from same album
+	minSameAlbum := 0.0
+
+	// 4. Energy Delta: Best case = tracks sorted by energy (monotonic increase/decrease)
+	energies := make([]int, n)
+	for i, t := range tracks {
+		energies[i] = t.Energy
+	}
+	slices.Sort(energies)
+	minEnergyDelta := 0.0
+	for i := 1; i < n; i++ {
+		minEnergyDelta += math.Abs(float64(energies[i] - energies[i-1]))
+	}
+	if normalizers.MaxEnergyDelta > 0 {
+		minEnergyDelta = (minEnergyDelta / normalizers.MaxEnergyDelta) * config.EnergyDeltaWeight
+	}
+
+	// 5. BPM Delta: Best case = tracks sorted by BPM
+	bpms := make([]float64, 0, n)
+	for _, t := range tracks {
+		if t.BPM > 0 {
+			bpms = append(bpms, t.BPM)
+		}
+	}
+	slices.Sort(bpms)
+	minBPMDelta := 0.0
+	for i := 1; i < len(bpms); i++ {
+		minBPMDelta += math.Abs(bpms[i] - bpms[i-1])
+	}
+	if normalizers.MaxBPMDelta > 0 && len(bpms) > 1 {
+		minBPMDelta = (minBPMDelta / normalizers.MaxBPMDelta) * config.BPMDeltaWeight
+	}
+
+	// 6. Position Bias: Best case = lowest energy tracks at start
+	biasThreshold := int(float64(n) * config.LowEnergyBiasPortion)
+	minPositionBias := 0.0
+	for j := 0; j < biasThreshold && j < n; j++ {
+		positionWeight := 1.0 - float64(j)/float64(biasThreshold)
+		rawBias := float64(energies[j]) * positionWeight
+		if normalizers.MaxPositionBias > 0 {
+			minPositionBias += (rawBias / normalizers.MaxPositionBias) * config.LowEnergyBiasWeight
+		}
+	}
+
+	// 7. Genre: Best case = 0 (either all same genre or all different, depending on weight direction)
+	minGenre := 0.0
+
+	return minHarmonic + minSameArtist + minSameAlbum +
+		minEnergyDelta + minBPMDelta + minPositionBias + minGenre
 }
 
 // buildEdgeFitnessCache pre-calculates base values for all possible track pairs
@@ -562,32 +612,16 @@ func buildEdgeFitnessCache(tracks []playlist.Track) {
 	})
 }
 
-// circularDistance calculates the minimum distance between two positions in a circular playlist
-// For a looped playlist, the distance wraps around
-func circularDistance(i, j, n int) int {
-	linear := i - j
-	if linear < 0 {
-		linear = -linear
-	}
-	circular := n - linear
-	if linear < circular {
-		return linear
-	}
-	return circular
-}
-
 // segmentFitness calculates fitness contribution for a track segment
 // Reads base values from cache and applies current config weights at evaluation time
 func segmentFitness(tracks []playlist.Track, start, end int, config GAConfig) float64 {
-	breakdown := segmentFitnessWithBreakdown(tracks, start, end, config)
-	return breakdown.Total
+	return segmentFitnessWithBreakdown(tracks, start, end, config).Total
 }
 
 // segmentFitnessWithBreakdown calculates fitness and returns breakdown of components
 func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config GAConfig) FitnessBreakdown {
 	var breakdown FitnessBreakdown
 	biasThreshold := int(float64(len(tracks)) * config.LowEnergyBiasPortion)
-
 	// Precompute genre-related values to avoid repeated checks and calculations
 	genreEnabled := config.GenreWeight != 0 && normalizers.MaxGenreChange > 0
 	var genreAbsWeight, genreSign float64
@@ -661,10 +695,47 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 	return breakdown
 }
 
-// twoOptImprove applies 2-opt local search to polish a playlist
+// twoOptImprove applies 2-opt local search to polish a playlist ordering
+//
+// 2-opt is a classic local search algorithm originally designed for the Traveling Salesman Problem (TSP).
+// It works by systematically testing segment reversals to find local fitness improvements.
+//
+// Algorithm:
+//  1. For each position i in the playlist
+//  2. For each position j > i
+//  3. Try reversing the segment [i:j] (flip the order of tracks in that range)
+//  4. If reversal improves fitness, keep it; otherwise, undo it
+//  5. Repeat until no improvements are found (local optimum reached)
+//
+// Example: Playlist [A, B, C, D, E] with i=1, j=3
+//   Before: A, [B, C, D], E
+//   After:  A, [D, C, B], E  (reversed middle segment)
+//
+// Performance optimizations:
+//   - Delta evaluation: Only recalculates fitness for the changed segment [i:endPos]
+//     instead of the entire playlist. This is O(segment_size) vs O(playlist_size).
+//   - Don't look bits: Tracks positions that failed to produce improvements and skips them
+//     on subsequent passes. Resets when any improvement is found (positions become "active" again).
+//   - Epsilon threshold (1e-10): Prevents floating point oscillations where tiny precision
+//     errors cause the algorithm to flip between two equivalent solutions infinitely.
+//   - Safety limit (1000 iterations): Guards against infinite loops from numerical issues.
+//
+// Usage in GA:
+//   Applied to elite solutions (top 3% of population) periodically during evolution:
+//     - First applied at generation 50
+//     - Then every 100 generations thereafter
+//   This balances exploration (GA) with exploitation (local search).
+//
+// Effectiveness:
+//   2-opt is particularly effective for playlist optimization because:
+//     - Track orderings have strong locality (nearby tracks influence each other's fitness)
+//     - Reversing segments can fix "crossed" transitions (e.g., 8A→5A→9A becomes 8A→9A→5A)
+//     - Complementary to crossover/mutation which provide global exploration
+//
+// Time complexity: O(n²) per iteration, where n = playlist length
+// Space complexity: O(n) for don't-look bits
 func twoOptImprove(tracks []playlist.Track, config GAConfig) {
 	n := len(tracks)
-	improved := true
 
 	// Don't look bits: track positions that recently failed to improve
 	dontLook := make([]bool, n)
@@ -674,49 +745,51 @@ func twoOptImprove(tracks []playlist.Track, config GAConfig) {
 
 	// Safety limit to prevent infinite loops from floating point issues
 	const maxIterations = 1000
+	const epsilon = 1e-10
 	iteration := 0
 
 	// Keep iterating until no more improvements found
+	improved := true
 	for improved && iteration < maxIterations {
 		improved = false
 		iteration++
 
-		for i := 0; i < n-2; i++ {
+		// For each position i in the playlist (but the last)
+		for i := 0; i < n-1; i++ {
 			if dontLook[i] {
 				continue
 			}
-
 			positionImproved := false
-			for j := i + 2; j < n; j++ {
+
+			// and for each position after i (but before the end)
+			for j := i + 1; j < n; j++ {
+				// endPos = j+1 to include the edge transition at tracks[j]→tracks[j+1]
 				endPos := j + 1
 				if endPos >= n {
 					endPos = n - 1
 				}
+
+				// Calculate fitness for the segment [i:endPos]
 				oldSegmentFitness := segmentFitness(tracks, i, endPos, config)
 
-				// Try reversing [i+1:j] and check if it improves fitness
-				reverseSegment(tracks, i+1, j)
+				// Reverse segment [i,j] (inclusive), then re-evaluate fitness for [i,endPos]
+				reverseSegment(tracks, i, j)
 				newSegmentFitness := segmentFitness(tracks, i, endPos, config)
 
-				delta := newSegmentFitness - oldSegmentFitness
-				newFitness := currentFitness + delta
+				newFitness := currentFitness + newSegmentFitness - oldSegmentFitness
 
-				// Use epsilon threshold to avoid floating point oscillations
-				// Only accept improvements larger than a tiny threshold
-				const epsilon = 1e-10
-				if newFitness < currentFitness-epsilon {
-					// Keep the reversal
-					currentFitness = newFitness
-					improved = true
-					positionImproved = true
-					// Reset all don't-look bits
-					for k := range dontLook {
-						dontLook[k] = false
-					}
-				} else {
-					// Undo the reversal
-					reverseSegment(tracks, i+1, j)
+				// If no improvement, undo the reversal and try next segment
+				// Use epsilon threshold to avoid accepting tiny floating point differences
+				if newFitness >= currentFitness-epsilon {
+					reverseSegment(tracks, i, j)
+					continue
 				}
+
+				// Improvement found - keep the reversal
+				currentFitness = newFitness
+				improved = true
+				positionImproved = true
+				clear(dontLook)
 			}
 
 			if !positionImproved {
@@ -731,7 +804,6 @@ func twoOptImprove(tracks []playlist.Track, config GAConfig) {
 	}
 }
 
-
 // reverseSegment reverses tracks[start:end+1] in place
 func reverseSegment(tracks []playlist.Track, start, end int) {
 	for start < end {
@@ -741,104 +813,36 @@ func reverseSegment(tracks []playlist.Track, start, end int) {
 	}
 }
 
-// edgeRecombinationCrossover creates offspring that preserve good track transitions
-func edgeRecombinationCrossover(dst, parent1, parent2 []playlist.Track, edges [][]int, p1Index, p2Index map[string]int, seen []map[int]bool, used []bool) {
+// orderCrossover (OX) creates offspring by preserving order from parents
+// This is more exploratory than Edge Recombination Crossover, allowing better escape from local optima
+// Algorithm:
+//  1. Select random substring from parent1 and copy to offspring
+//  2. Fill remaining positions with tracks from parent2 in order, skipping those already present
+func orderCrossover(dst, parent1, parent2 []playlist.Track) {
 	numTracks := len(parent1)
 
-	// Build edge table
+	// Select two random cut points
+	cut1 := rand.IntN(numTracks)
+	cut2 := rand.IntN(numTracks)
+	if cut1 > cut2 {
+		cut1, cut2 = cut2, cut1
+	}
+
+	// keep track of which tracks are already present in offspring
+	present := make(map[string]bool, numTracks)
+	// Copy substring from parent1 to offspring
+	for i := cut1; i <= cut2; i++ {
+		dst[i] = parent1[i]
+		present[parent1[i].Path] = true
+	}
+
+	// Fill remaining positions with tracks from parent2 in order
+	dstIdx := (cut2 + 1) % numTracks
 	for i := 0; i < numTracks; i++ {
-		p1Index[parent1[i].Path] = i
-		p2Index[parent2[i].Path] = i
-	}
-
-	// Reset edges and add parent1 edges
-	for i := 0; i < numTracks; i++ {
-		edges[i] = edges[i][:0]
-		for k := range seen[i] {
-			delete(seen[i], k)
+		parent2Idx := (cut2 + 1 + i) % numTracks
+		if !present[parent2[parent2Idx].Path] {
+			dst[dstIdx] = parent2[parent2Idx]
+			dstIdx = (dstIdx + 1) % numTracks
 		}
-		if i > 0 {
-			edges[i] = append(edges[i], i-1)
-			seen[i][i-1] = true
-		}
-		if i < numTracks-1 {
-			edges[i] = append(edges[i], i+1)
-			seen[i][i+1] = true
-		}
-	}
-
-	// Add edges from parent2
-	for i1, track1 := range parent1 {
-		i2 := p2Index[track1.Path]
-
-		if i2 > 0 {
-			j1 := p1Index[parent2[i2-1].Path]
-			if !seen[i1][j1] {
-				edges[i1] = append(edges[i1], j1)
-				seen[i1][j1] = true
-			}
-		}
-
-		if i2 < numTracks-1 {
-			j1 := p1Index[parent2[i2+1].Path]
-			if !seen[i1][j1] {
-				edges[i1] = append(edges[i1], j1)
-				seen[i1][j1] = true
-			}
-		}
-	}
-
-	// Clear used array
-	for i := range used {
-		used[i] = false
-	}
-
-	// Start with random track
-	currentIdx := rand.Intn(numTracks)
-	dst[0] = parent1[currentIdx]
-	used[currentIdx] = true
-
-	// Build offspring by selecting best neighbors
-	for pos := 1; pos < numTracks; pos++ {
-		nextIdx := -1
-		minEdges := math.MaxInt
-
-		for _, neighbor := range edges[currentIdx] {
-			if used[neighbor] {
-				continue
-			}
-
-			edgeCount := 0
-			for _, e := range edges[neighbor] {
-				if !used[e] {
-					edgeCount++
-				}
-			}
-
-			if edgeCount < minEdges {
-				minEdges = edgeCount
-				nextIdx = neighbor
-			}
-		}
-
-		if nextIdx == -1 {
-			// No valid neighbors - pick random unused track
-			unused := make([]int, 0, len(used))
-			for i, u := range used {
-				if !u {
-					unused = append(unused, i)
-				}
-			}
-			if len(unused) > 0 {
-				nextIdx = unused[rand.Intn(len(unused))]
-			}
-			if nextIdx == -1 {
-				break
-			}
-		}
-
-		dst[pos] = parent1[nextIdx]
-		used[nextIdx] = true
-		currentIdx = nextIdx
 	}
 }

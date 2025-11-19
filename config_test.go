@@ -1,3 +1,6 @@
+// ABOUTME: Tests for configuration load/save functionality
+// ABOUTME: Validates TOML parsing and default config fallback behavior
+
 package main
 
 import (
@@ -8,13 +11,11 @@ import (
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.HarmonicWeight != 1.0 {
-		t.Errorf("Expected HarmonicWeight 1.0, got %.2f", cfg.HarmonicWeight)
+	if cfg.HarmonicWeight != 0.3 {
+		t.Errorf("Expected HarmonicWeight 0.3, got %.2f", cfg.HarmonicWeight)
 	}
 
-	if cfg.PopulationSize != 100 {
-		t.Errorf("Expected PopulationSize 100, got %d", cfg.PopulationSize)
-	}
+	// PopulationSize is now auto-calculated based on playlist length, not in config
 }
 
 func TestSaveAndLoadConfig(t *testing.T) {
@@ -42,9 +43,7 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	if loaded.HarmonicWeight != cfg.HarmonicWeight {
 		t.Errorf("HarmonicWeight mismatch: got %.2f, want %.2f", loaded.HarmonicWeight, cfg.HarmonicWeight)
 	}
-	if loaded.PopulationSize != cfg.PopulationSize {
-		t.Errorf("PopulationSize mismatch: got %d, want %d", loaded.PopulationSize, cfg.PopulationSize)
-	}
+	// PopulationSize is now auto-calculated, not in config
 }
 
 func TestLoadNonExistentConfig(t *testing.T) {

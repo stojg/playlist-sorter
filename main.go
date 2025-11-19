@@ -21,8 +21,18 @@ func main() {
 	// Define profiling flags
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 	memprofile := flag.String("memprofile", "", "write memory profile to file")
+	view := flag.Bool("view", false, "view playlist with live updates (no optimization)")
 	visual := flag.Bool("visual", false, "run in visual/interactive mode with live parameter tuning")
+	debug := flag.Bool("debug", false, "enable debug logging to playlist-sorter-debug.log")
 	flag.Parse()
+
+	// Enable debug logging if requested
+	if *debug {
+		if err := InitDebugLog("playlist-sorter-debug.log"); err != nil {
+			log.Fatalf("Failed to initialize debug log: %v", err)
+		}
+		fmt.Println("Debug logging enabled: playlist-sorter-debug.log")
+	}
 
 	// Start CPU profiling if requested
 	if *cpuprofile != "" {
@@ -53,6 +63,14 @@ func main() {
 
 	playlistPath := args[0]
 
+	// Run in view mode if requested
+	if *view {
+		if err := RunViewMode(playlistPath); err != nil {
+			log.Fatalf("View mode error: %v", err)
+		}
+		return
+	}
+
 	// Run in visual mode if requested
 	if *visual {
 		if err := RunTUI(playlistPath); err != nil {
@@ -64,8 +82,8 @@ func main() {
 
 	fmt.Printf("Reading playlist: %s\n", playlistPath)
 
-	// Load playlist with metadata from beets
-	tracks, err := playlist.LoadPlaylistWithMetadata(playlistPath)
+	// Load playlist with metadata from beets (verbose mode for CLI)
+	tracks, err := playlist.LoadPlaylistWithMetadata(playlistPath, true)
 	if err != nil {
 		log.Fatalf("Failed to load playlist: %v", err)
 	}
@@ -90,14 +108,24 @@ func main() {
 		cancel()
 	}()
 
-	fmt.Println("\nOptimizing playlist... (press Ctrl+C to stop early, or wait up to 1 hour)")
-
 	// Wrap config in SharedConfig for consistency with TUI mode
 	sharedConfig := &SharedConfig{
 		config: config,
 	}
 
-	sortedTracks := cliGeneticSort(ctx, tracks, sharedConfig)
+	// Build edge fitness cache (required for fitness calculations)
+	buildEdgeFitnessCache(tracks)
+
+	// Calculate fitness bounds for context
+	theoreticalMin := calculateTheoreticalMinimum(tracks, config)
+	initialFitness := calculateFitness(tracks, config)
+
+	fmt.Println("\nOptimizing playlist... (press Ctrl+C to stop early, or wait up to 1 hour)")
+	fmt.Printf("Initial fitness: %.10f\n", initialFitness)
+	fmt.Printf("Theoretical minimum: %.10f (not achievable, conflicting constraints)\n", theoreticalMin)
+	fmt.Println()
+
+	sortedTracks := cliGeneticSort(ctx, tracks, sharedConfig, playlistPath)
 
 	// Show sorted playlist with tabwriter
 	fmt.Println("\nSorted playlist:")
@@ -164,7 +192,7 @@ func truncate(s string, maxLen int) string {
 }
 
 // cliGeneticSort wraps geneticSort with CLI-specific progress display
-func cliGeneticSort(ctx context.Context, tracks []playlist.Track, config *SharedConfig) []playlist.Track {
+func cliGeneticSort(ctx context.Context, tracks []playlist.Track, config *SharedConfig, playlistPath string) []playlist.Track {
 	startTime := time.Now()
 
 	// Create update channel for tracking progress
@@ -228,6 +256,11 @@ loop:
 				elapsedStr := formatElapsed(elapsed)
 				fmt.Printf("%s Gen %d - fitness: %.10f\n", elapsedStr, currentGen, update.BestFitness)
 				previousBestFitness = update.BestFitness
+
+				// Save playlist to disk for live monitoring with --view mode
+				if err := playlist.WritePlaylist(playlistPath, update.BestPlaylist); err != nil {
+					log.Printf("Warning: failed to write playlist: %v", err)
+				}
 			}
 
 		case <-statusTicker.C:
