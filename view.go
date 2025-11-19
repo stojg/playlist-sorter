@@ -200,6 +200,167 @@ func (m viewModel) Init() tea.Cmd {
 	)
 }
 
+// Update handles messages and updates the model
+func (m viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+
+		if !m.ready {
+			// Initialize viewport on first size message
+			headerHeight := 3 // Title + header row + separator
+			footerHeight := 2 // Status + help
+			m.viewport = viewport.New(msg.Width, msg.Height-headerHeight-footerHeight)
+			m.viewport.SetContent(m.renderPlaylistContent())
+			m.ready = true
+		} else {
+			// Update viewport size
+			headerHeight := 3
+			footerHeight := 2
+			m.viewport.Width = msg.Width
+			m.viewport.Height = msg.Height - headerHeight - footerHeight
+		}
+
+		return m, nil
+
+	case fileChangeMsg:
+		// File changed, reload playlist
+		return m, tea.Batch(
+			reloadPlaylist(m.playlistPath),
+			waitForFileChange(m.fileWatcher), // Continue watching
+		)
+
+	case reloadCompleteMsg:
+		if msg.err != nil {
+			m.errorMsg = fmt.Sprintf("Error reloading: %v", msg.err)
+		} else {
+			m.tracks = msg.tracks
+			m.lastReload = time.Now()
+			m.errorMsg = ""
+			// Update viewport content
+			m.viewport.SetContent(m.renderPlaylistContent())
+		}
+		return m, nil
+
+	case tea.KeyMsg:
+		switch {
+		case key.Matches(msg, viewKeys.Quit):
+			// Check for unsaved changes
+			if m.modified {
+				// Check if we already showed the warning (second q press)
+				if m.quitConfirmationPending {
+					// Second q press, force quit
+					return m, tea.Quit
+				}
+				// First q press, show warning
+				m.quitConfirmationPending = true
+				m.errorMsg = "Unsaved changes! Press 'w' to save or 'q' again to quit without saving"
+				return m, nil
+			}
+			return m, tea.Quit
+
+		case key.Matches(msg, viewKeys.Up):
+			if m.cursorPos > 0 {
+				m.cursorPos--
+				m.ensureCursorVisible()
+				m.viewport.SetContent(m.renderPlaylistContent())
+			}
+
+		case key.Matches(msg, viewKeys.Down):
+			if m.cursorPos < len(m.tracks)-1 {
+				m.cursorPos++
+				m.ensureCursorVisible()
+				m.viewport.SetContent(m.renderPlaylistContent())
+			}
+
+		case key.Matches(msg, viewKeys.PageUp):
+			m.cursorPos -= m.viewport.Height
+			if m.cursorPos < 0 {
+				m.cursorPos = 0
+			}
+			m.ensureCursorVisible()
+			m.viewport.SetContent(m.renderPlaylistContent())
+
+		case key.Matches(msg, viewKeys.PageDown):
+			m.cursorPos += m.viewport.Height
+			if m.cursorPos >= len(m.tracks) {
+				m.cursorPos = len(m.tracks) - 1
+			}
+			if m.cursorPos < 0 {
+				m.cursorPos = 0
+			}
+			m.ensureCursorVisible()
+			m.viewport.SetContent(m.renderPlaylistContent())
+
+		case key.Matches(msg, viewKeys.Top):
+			m.cursorPos = 0
+			m.viewport.GotoTop()
+			m.viewport.SetContent(m.renderPlaylistContent())
+
+		case key.Matches(msg, viewKeys.Bottom):
+			if len(m.tracks) > 0 {
+				m.cursorPos = len(m.tracks) - 1
+			}
+			m.viewport.GotoBottom()
+			m.viewport.SetContent(m.renderPlaylistContent())
+
+		case key.Matches(msg, viewKeys.Reload):
+			return m, reloadPlaylist(m.playlistPath)
+
+		case key.Matches(msg, viewKeys.Delete):
+			m.deleteTrack()
+			m.ensureCursorVisible()
+
+		case key.Matches(msg, viewKeys.Undo):
+			m.undo()
+			m.ensureCursorVisible()
+
+		case key.Matches(msg, viewKeys.Redo):
+			m.redo()
+			m.ensureCursorVisible()
+
+		case key.Matches(msg, viewKeys.Save):
+			if err := m.savePlaylist(); err != nil {
+				m.errorMsg = fmt.Sprintf("Save failed: %v", err)
+			} else {
+				m.errorMsg = "Saved successfully"
+			}
+		}
+	}
+
+	// Update viewport
+	m.viewport, cmd = m.viewport.Update(msg)
+	return m, cmd
+}
+
+// View renders the view
+func (m viewModel) View() string {
+	if !m.ready {
+		return "Loading..."
+	}
+
+	// Title
+	title := viewTitleStyle.Render(fmt.Sprintf("Playlist Viewer: %s", m.playlistPath))
+
+	// Header row
+	header := viewHeaderStyle.Render(fmt.Sprintf("%-3s %-4s %-4s %-3s %-20s %-30s %-20s %-15s",
+		"#", "Key", "BPM", "Eng", "Artist", "Title", "Album", "Genre"))
+
+	// Viewport with playlist
+	viewportContent := m.viewport.View()
+
+	// Status bar
+	status := m.renderStatus()
+
+	// Help text
+	help := m.renderHelp()
+
+	return fmt.Sprintf("%s\n%s\n%s\n%s\n%s", title, header, viewportContent, status, help)
+}
+
 // waitForFileChange returns a command that waits for file system events
 func waitForFileChange(watcher *fsnotify.Watcher) tea.Cmd {
 	return func() tea.Msg {
@@ -375,167 +536,6 @@ func (m *viewModel) ensureCursorVisible() {
 	} else if m.cursorPos > viewportBottom {
 		m.viewport.SetYOffset(m.cursorPos - m.viewport.Height + 1)
 	}
-}
-
-// Update handles messages and updates the model
-func (m viewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-
-		if !m.ready {
-			// Initialize viewport on first size message
-			headerHeight := 3 // Title + header row + separator
-			footerHeight := 2 // Status + help
-			m.viewport = viewport.New(msg.Width, msg.Height-headerHeight-footerHeight)
-			m.viewport.SetContent(m.renderPlaylistContent())
-			m.ready = true
-		} else {
-			// Update viewport size
-			headerHeight := 3
-			footerHeight := 2
-			m.viewport.Width = msg.Width
-			m.viewport.Height = msg.Height - headerHeight - footerHeight
-		}
-
-		return m, nil
-
-	case fileChangeMsg:
-		// File changed, reload playlist
-		return m, tea.Batch(
-			reloadPlaylist(m.playlistPath),
-			waitForFileChange(m.fileWatcher), // Continue watching
-		)
-
-	case reloadCompleteMsg:
-		if msg.err != nil {
-			m.errorMsg = fmt.Sprintf("Error reloading: %v", msg.err)
-		} else {
-			m.tracks = msg.tracks
-			m.lastReload = time.Now()
-			m.errorMsg = ""
-			// Update viewport content
-			m.viewport.SetContent(m.renderPlaylistContent())
-		}
-		return m, nil
-
-	case tea.KeyMsg:
-		switch {
-		case key.Matches(msg, viewKeys.Quit):
-			// Check for unsaved changes
-			if m.modified {
-				// Check if we already showed the warning (second q press)
-				if m.quitConfirmationPending {
-					// Second q press, force quit
-					return m, tea.Quit
-				}
-				// First q press, show warning
-				m.quitConfirmationPending = true
-				m.errorMsg = "Unsaved changes! Press 'w' to save or 'q' again to quit without saving"
-				return m, nil
-			}
-			return m, tea.Quit
-
-		case key.Matches(msg, viewKeys.Up):
-			if m.cursorPos > 0 {
-				m.cursorPos--
-				m.ensureCursorVisible()
-				m.viewport.SetContent(m.renderPlaylistContent())
-			}
-
-		case key.Matches(msg, viewKeys.Down):
-			if m.cursorPos < len(m.tracks)-1 {
-				m.cursorPos++
-				m.ensureCursorVisible()
-				m.viewport.SetContent(m.renderPlaylistContent())
-			}
-
-		case key.Matches(msg, viewKeys.PageUp):
-			m.cursorPos -= m.viewport.Height
-			if m.cursorPos < 0 {
-				m.cursorPos = 0
-			}
-			m.ensureCursorVisible()
-			m.viewport.SetContent(m.renderPlaylistContent())
-
-		case key.Matches(msg, viewKeys.PageDown):
-			m.cursorPos += m.viewport.Height
-			if m.cursorPos >= len(m.tracks) {
-				m.cursorPos = len(m.tracks) - 1
-			}
-			if m.cursorPos < 0 {
-				m.cursorPos = 0
-			}
-			m.ensureCursorVisible()
-			m.viewport.SetContent(m.renderPlaylistContent())
-
-		case key.Matches(msg, viewKeys.Top):
-			m.cursorPos = 0
-			m.viewport.GotoTop()
-			m.viewport.SetContent(m.renderPlaylistContent())
-
-		case key.Matches(msg, viewKeys.Bottom):
-			if len(m.tracks) > 0 {
-				m.cursorPos = len(m.tracks) - 1
-			}
-			m.viewport.GotoBottom()
-			m.viewport.SetContent(m.renderPlaylistContent())
-
-		case key.Matches(msg, viewKeys.Reload):
-			return m, reloadPlaylist(m.playlistPath)
-
-		case key.Matches(msg, viewKeys.Delete):
-			m.deleteTrack()
-			m.ensureCursorVisible()
-
-		case key.Matches(msg, viewKeys.Undo):
-			m.undo()
-			m.ensureCursorVisible()
-
-		case key.Matches(msg, viewKeys.Redo):
-			m.redo()
-			m.ensureCursorVisible()
-
-		case key.Matches(msg, viewKeys.Save):
-			if err := m.savePlaylist(); err != nil {
-				m.errorMsg = fmt.Sprintf("Save failed: %v", err)
-			} else {
-				m.errorMsg = "Saved successfully"
-			}
-		}
-	}
-
-	// Update viewport
-	m.viewport, cmd = m.viewport.Update(msg)
-	return m, cmd
-}
-
-// View renders the view
-func (m viewModel) View() string {
-	if !m.ready {
-		return "Loading..."
-	}
-
-	// Title
-	title := viewTitleStyle.Render(fmt.Sprintf("Playlist Viewer: %s", m.playlistPath))
-
-	// Header row
-	header := viewHeaderStyle.Render(fmt.Sprintf("%-3s %-4s %-4s %-3s %-20s %-30s %-20s %-15s",
-		"#", "Key", "BPM", "Eng", "Artist", "Title", "Album", "Genre"))
-
-	// Viewport with playlist
-	viewportContent := m.viewport.View()
-
-	// Status bar
-	status := m.renderStatus()
-
-	// Help text
-	help := m.renderHelp()
-
-	return fmt.Sprintf("%s\n%s\n%s\n%s\n%s", title, header, viewportContent, status, help)
 }
 
 // renderPlaylistContent renders the full playlist for the viewport

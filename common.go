@@ -15,23 +15,6 @@ import (
 // Debug logger - writes to file for debugging
 var debugLog *log.Logger
 
-// InitDebugLog initializes debug logging to a file
-func InitDebugLog(filename string) error {
-	f, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	debugLog = log.New(f, "", log.Ltime|log.Lmicroseconds)
-	return nil
-}
-
-// debugf logs debug messages to file if debug logger is enabled
-func debugf(format string, args ...interface{}) {
-	if debugLog != nil {
-		debugLog.Printf(format, args...)
-	}
-}
-
 // RunOptions contains command-line options for all modes (CLI, TUI, View)
 type RunOptions struct {
 	PlaylistPath string
@@ -59,6 +42,33 @@ type OptimizationContext struct {
 	Tracks       []playlist.Track
 	Config       config.GAConfig
 	SharedConfig *SharedConfig
+}
+
+// InitializePlaylist performs full initialization: load playlist, load config, build edge cache
+// This is used by CLI and TUI modes that need full optimization setup
+func InitializePlaylist(opts PlaylistOptions) (*OptimizationContext, error) {
+	// Load and validate playlist
+	tracks, err := LoadPlaylistForMode(opts, RequireMultipleTracks)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load config
+	cfg, _ := config.LoadConfig(config.GetConfigPath())
+
+	// Wrap config in SharedConfig for thread-safe access
+	sharedConfig := &SharedConfig{
+		config: cfg,
+	}
+
+	// Build edge fitness cache (required for fitness calculations)
+	buildEdgeFitnessCache(tracks)
+
+	return &OptimizationContext{
+		Tracks:       tracks,
+		Config:       cfg,
+		SharedConfig: sharedConfig,
+	}, nil
 }
 
 // LoadPlaylistForMode loads a playlist with edge case validation and index assignment
@@ -91,33 +101,6 @@ func LoadPlaylistForMode(opts PlaylistOptions, validation PlaylistValidation) ([
 	return tracks, nil
 }
 
-// InitializePlaylist performs full initialization: load playlist, load config, build edge cache
-// This is used by CLI and TUI modes that need full optimization setup
-func InitializePlaylist(opts PlaylistOptions) (*OptimizationContext, error) {
-	// Load and validate playlist
-	tracks, err := LoadPlaylistForMode(opts, RequireMultipleTracks)
-	if err != nil {
-		return nil, err
-	}
-
-	// Load config
-	cfg, _ := config.LoadConfig(config.GetConfigPath())
-
-	// Wrap config in SharedConfig for thread-safe access
-	sharedConfig := &SharedConfig{
-		config: cfg,
-	}
-
-	// Build edge fitness cache (required for fitness calculations)
-	buildEdgeFitnessCache(tracks)
-
-	return &OptimizationContext{
-		Tracks:       tracks,
-		Config:       cfg,
-		SharedConfig: sharedConfig,
-	}, nil
-}
-
 // SetupDebugLog initializes debug logging to the specified file
 func SetupDebugLog(filename string) error {
 	if err := InitDebugLog(filename); err != nil {
@@ -134,6 +117,23 @@ func SetupDebugLog(filename string) error {
 	}
 
 	return nil
+}
+
+// InitDebugLog initializes debug logging to a file
+func InitDebugLog(filename string) error {
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	debugLog = log.New(f, "", log.Ltime|log.Lmicroseconds)
+	return nil
+}
+
+// debugf logs debug messages to file if debug logger is enabled
+func debugf(format string, args ...interface{}) {
+	if debugLog != nil {
+		debugLog.Printf(format, args...)
+	}
 }
 
 // truncate truncates a string to maxLen characters, adding "..." if needed

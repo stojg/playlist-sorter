@@ -120,6 +120,52 @@ var (
 			Foreground(lipgloss.Color("241"))
 )
 
+// RunTUI starts the TUI mode
+func RunTUI(opts RunOptions) error {
+	// Setup debug logging if requested
+	if opts.DebugLog {
+		if err := SetupDebugLog("playlist-sorter-debug.log"); err != nil {
+			return err
+		}
+	}
+
+	// Load and validate playlist using common initialization
+	tracks, err := LoadPlaylistForMode(PlaylistOptions{
+		Path:    opts.PlaylistPath,
+		Verbose: false,
+	}, RequireMultipleTracks)
+	if err != nil {
+		return err
+	}
+
+	// Get config path
+	configPath := config.GetConfigPath()
+
+	// Create model
+	m := initModel(tracks, configPath, opts)
+
+	// Run program
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	finalModel, err := p.Run()
+	if err != nil {
+		return fmt.Errorf("TUI error: %w", err)
+	}
+
+	// Save the optimized playlist on exit (unless dry-run mode)
+	if m, ok := finalModel.(model); ok && len(m.bestPlaylist) > 0 {
+		if m.dryRun {
+			fmt.Println("\n--dry-run mode: playlist not modified")
+		} else {
+			if err := playlist.WritePlaylist(m.outputPath, m.bestPlaylist); err != nil {
+				return fmt.Errorf("failed to save playlist: %w", err)
+			}
+			fmt.Printf("\nSaved optimized playlist to: %s\n", m.outputPath)
+		}
+	}
+
+	return nil
+}
+
 // initModel creates the initial model
 func initModel(tracks []playlist.Track, configPath string, opts RunOptions) model {
 	cfg, _ := config.LoadConfig(configPath)
@@ -180,33 +226,6 @@ func (m model) Init() tea.Cmd {
 		waitForGAUpdate(m.updateChan),
 		tea.EnterAltScreen,
 	)
-}
-
-// runGA starts the GA in a goroutine and returns a command
-func runGA(ctx context.Context, tracks []playlist.Track, config *SharedConfig, updateChan chan<- GAUpdate) tea.Cmd {
-	return func() tea.Msg {
-		// Run GA (blocks until context cancelled or GA completes)
-		progress := &Tracker{
-			updateChan:   updateChan,
-			sharedConfig: config,
-			lastGenTime:  time.Now(),
-		}
-		defer progress.Close()
-		geneticSort(ctx, tracks, config, progress)
-		return nil
-	}
-}
-
-// waitForGAUpdate waits for GA updates and returns them as messages
-func waitForGAUpdate(updateChan <-chan GAUpdate) tea.Cmd {
-	return func() tea.Msg {
-		update, ok := <-updateChan
-		if !ok {
-			// Channel closed
-			return nil
-		}
-		return update
-	}
 }
 
 // Update handles messages and updates the model
@@ -281,6 +300,66 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// View renders the TUI
+func (m model) View() string {
+	if m.quitting {
+		return "Saving config and exiting...\n"
+	}
+
+	// Build the UI in two columns
+	leftPanel := m.renderParameters()
+	rightPanel := m.renderPlaylist()
+
+	// Create styles for the two panels with fixed widths
+	leftPanelStyle := lipgloss.NewStyle().
+		Width(45).
+		Padding(0, 1)
+
+	rightPanelStyle := lipgloss.NewStyle().
+		Width(m.width-47).
+		Padding(0, 1)
+
+	// Combine panels horizontally
+	combined := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		leftPanelStyle.Render(leftPanel),
+		rightPanelStyle.Render(rightPanel),
+	)
+
+	// Add status bar at bottom
+	statusBar := m.renderStatus()
+	breakdown := m.renderBreakdown()
+
+	return combined + "\n" + statusBar + "\n" + breakdown + "\n" + m.renderHelp()
+}
+
+// runGA starts the GA in a goroutine and returns a command
+func runGA(ctx context.Context, tracks []playlist.Track, config *SharedConfig, updateChan chan<- GAUpdate) tea.Cmd {
+	return func() tea.Msg {
+		// Run GA (blocks until context cancelled or GA completes)
+		progress := &Tracker{
+			updateChan:   updateChan,
+			sharedConfig: config,
+			lastGenTime:  time.Now(),
+		}
+		defer progress.Close()
+		geneticSort(ctx, tracks, config, progress)
+		return nil
+	}
+}
+
+// waitForGAUpdate waits for GA updates and returns them as messages
+func waitForGAUpdate(updateChan <-chan GAUpdate) tea.Cmd {
+	return func() tea.Msg {
+		update, ok := <-updateChan
+		if !ok {
+			// Channel closed
+			return nil
+		}
+		return update
+	}
+}
+
 // increaseParam increases the selected parameter value
 func (m *model) increaseParam() {
 	param := &m.params[m.selectedParam]
@@ -319,17 +398,6 @@ func (m *model) decreaseParam() {
 	m.syncConfigToGA()
 }
 
-// syncConfigToGA syncs parameter values to the shared config
-// Since all parameter pointers point to m.localConfig fields, we can simply
-// copy the entire struct instead of iterating through parameters
-func (m *model) syncConfigToGA() {
-	// Parameters already modified m.localConfig directly via pointers
-	// Just copy the entire struct to shared config (thread-safe)
-	debugf("[TUI] Updating config - Genre Weight: %.2f", m.localConfig.GenreWeight)
-	m.sharedConfig.Update(*m.localConfig)
-	debugf("[TUI] Config update complete")
-}
-
 // resetToDefaults resets all parameters to their default values
 func (m *model) resetToDefaults() {
 	defaults := config.DefaultConfig()
@@ -348,37 +416,15 @@ func (m *model) resetToDefaults() {
 	m.syncConfigToGA()
 }
 
-// View renders the TUI
-func (m model) View() string {
-	if m.quitting {
-		return "Saving config and exiting...\n"
-	}
-
-	// Build the UI in two columns
-	leftPanel := m.renderParameters()
-	rightPanel := m.renderPlaylist()
-
-	// Create styles for the two panels with fixed widths
-	leftPanelStyle := lipgloss.NewStyle().
-		Width(45).
-		Padding(0, 1)
-
-	rightPanelStyle := lipgloss.NewStyle().
-		Width(m.width-47).
-		Padding(0, 1)
-
-	// Combine panels horizontally
-	combined := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		leftPanelStyle.Render(leftPanel),
-		rightPanelStyle.Render(rightPanel),
-	)
-
-	// Add status bar at bottom
-	statusBar := m.renderStatus()
-	breakdown := m.renderBreakdown()
-
-	return combined + "\n" + statusBar + "\n" + breakdown + "\n" + m.renderHelp()
+// syncConfigToGA syncs parameter values to the shared config
+// Since all parameter pointers point to m.localConfig fields, we can simply
+// copy the entire struct instead of iterating through parameters
+func (m *model) syncConfigToGA() {
+	// Parameters already modified m.localConfig directly via pointers
+	// Just copy the entire struct to shared config (thread-safe)
+	debugf("[TUI] Updating config - Genre Weight: %.2f", m.localConfig.GenreWeight)
+	m.sharedConfig.Update(*m.localConfig)
+	debugf("[TUI] Config update complete")
 }
 
 // renderParameters renders the parameter control panel
@@ -490,50 +536,4 @@ func (m model) renderBreakdown() string {
 // renderHelp renders the help text
 func (m model) renderHelp() string {
 	return helpStyle.Render(" ↑/↓: select param | ←/→: adjust value | d: reset defaults | q: quit & save")
-}
-
-// RunTUI starts the TUI mode
-func RunTUI(opts RunOptions) error {
-	// Setup debug logging if requested
-	if opts.DebugLog {
-		if err := SetupDebugLog("playlist-sorter-debug.log"); err != nil {
-			return err
-		}
-	}
-
-	// Load and validate playlist using common initialization
-	tracks, err := LoadPlaylistForMode(PlaylistOptions{
-		Path:    opts.PlaylistPath,
-		Verbose: false,
-	}, RequireMultipleTracks)
-	if err != nil {
-		return err
-	}
-
-	// Get config path
-	configPath := config.GetConfigPath()
-
-	// Create model
-	m := initModel(tracks, configPath, opts)
-
-	// Run program
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	finalModel, err := p.Run()
-	if err != nil {
-		return fmt.Errorf("TUI error: %w", err)
-	}
-
-	// Save the optimized playlist on exit (unless dry-run mode)
-	if m, ok := finalModel.(model); ok && len(m.bestPlaylist) > 0 {
-		if m.dryRun {
-			fmt.Println("\n--dry-run mode: playlist not modified")
-		} else {
-			if err := playlist.WritePlaylist(m.outputPath, m.bestPlaylist); err != nil {
-				return fmt.Errorf("failed to save playlist: %w", err)
-			}
-			fmt.Printf("\nSaved optimized playlist to: %s\n", m.outputPath)
-		}
-	}
-
-	return nil
 }

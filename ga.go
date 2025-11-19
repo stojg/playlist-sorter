@@ -379,83 +379,6 @@ loop:
 	return bestIndividual
 }
 
-// calculateFitness computes the fitness score for a given playlist ordering
-func calculateFitness(individual []playlist.Track, config config.GAConfig) float64 {
-	breakdown := calculateFitnessWithBreakdown(individual, config)
-	return breakdown.Total
-}
-
-// calculateFitnessWithBreakdown computes fitness and returns detailed breakdown
-func calculateFitnessWithBreakdown(individual []playlist.Track, config config.GAConfig) FitnessBreakdown {
-	return segmentFitnessWithBreakdown(individual, 0, len(individual)-1, config)
-}
-
-// calculateTheoreticalMinimum calculates the theoretical minimum fitness score
-// This is NOT achievable in practice as the constraints conflict with each other
-// (e.g., monotonic energy vs clustered low energy at start), but provides a lower bound
-func calculateTheoreticalMinimum(tracks []playlist.Track, config config.GAConfig) float64 {
-	n := len(tracks)
-	if n == 0 {
-		return 0.0
-	}
-
-	// 1. Harmonic: Best case = all tracks have perfect harmonic compatibility (distance 0)
-	minHarmonic := 0.0
-
-	// 2. Same Artist: Best case = no consecutive tracks from same artist
-	minSameArtist := 0.0
-
-	// 3. Same Album: Best case = no consecutive tracks from same album
-	minSameAlbum := 0.0
-
-	// 4. Energy Delta: Best case = tracks sorted by energy (monotonic increase/decrease)
-	energies := make([]int, n)
-	for i, t := range tracks {
-		energies[i] = t.Energy
-	}
-	slices.Sort(energies)
-	minEnergyDelta := 0.0
-	for i := 1; i < n; i++ {
-		minEnergyDelta += math.Abs(float64(energies[i] - energies[i-1]))
-	}
-	if normalizers.MaxEnergyDelta > 0 {
-		minEnergyDelta = (minEnergyDelta / normalizers.MaxEnergyDelta) * config.EnergyDeltaWeight
-	}
-
-	// 5. BPM Delta: Best case = tracks sorted by BPM
-	bpms := make([]float64, 0, n)
-	for _, t := range tracks {
-		if t.BPM > 0 {
-			bpms = append(bpms, t.BPM)
-		}
-	}
-	slices.Sort(bpms)
-	minBPMDelta := 0.0
-	for i := 1; i < len(bpms); i++ {
-		minBPMDelta += math.Abs(bpms[i] - bpms[i-1])
-	}
-	if normalizers.MaxBPMDelta > 0 && len(bpms) > 1 {
-		minBPMDelta = (minBPMDelta / normalizers.MaxBPMDelta) * config.BPMDeltaWeight
-	}
-
-	// 6. Position Bias: Best case = lowest energy tracks at start
-	biasThreshold := int(float64(n) * config.LowEnergyBiasPortion)
-	minPositionBias := 0.0
-	for j := 0; j < biasThreshold && j < n; j++ {
-		positionWeight := 1.0 - float64(j)/float64(biasThreshold)
-		rawBias := float64(energies[j]) * positionWeight
-		if normalizers.MaxPositionBias > 0 {
-			minPositionBias += (rawBias / normalizers.MaxPositionBias) * config.LowEnergyBiasWeight
-		}
-	}
-
-	// 7. Genre: Best case = 0 (either all same genre or all different, depending on weight direction)
-	minGenre := 0.0
-
-	return minHarmonic + minSameArtist + minSameAlbum +
-		minEnergyDelta + minBPMDelta + minPositionBias + minGenre
-}
-
 // buildEdgeFitnessCache pre-calculates base values for all possible track pairs
 // Weights are NOT cached - they're applied at evaluation time for live parameter updates
 // Uses sync.Once to ensure cache is built exactly once, avoiding race conditions
@@ -568,79 +491,54 @@ func buildEdgeFitnessCache(tracks []playlist.Track) {
 	})
 }
 
-// segmentFitness calculates fitness contribution for a track segment
-// Reads base values from cache and applies current config weights at evaluation time
-func segmentFitness(tracks []playlist.Track, start, end int, config config.GAConfig) float64 {
-	return segmentFitnessWithBreakdown(tracks, start, end, config).Total
+// calculateFitness computes the fitness score for a given playlist ordering
+func calculateFitness(individual []playlist.Track, config config.GAConfig) float64 {
+	breakdown := calculateFitnessWithBreakdown(individual, config)
+	return breakdown.Total
 }
 
-// segmentFitnessWithBreakdown calculates fitness and returns breakdown of components
-func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config config.GAConfig) FitnessBreakdown {
-	var breakdown FitnessBreakdown
-	biasThreshold := int(float64(len(tracks)) * config.LowEnergyBiasPortion)
-	// Precompute genre-related values to avoid repeated checks and calculations
-	genreEnabled := config.GenreWeight != 0 && normalizers.MaxGenreChange > 0
-	var genreAbsWeight, genreSign float64
-	if genreEnabled {
-		genreAbsWeight = math.Abs(config.GenreWeight) / normalizers.MaxGenreChange
-		if config.GenreWeight > 0 {
-			genreSign = 1.0
-		} else {
-			genreSign = -1.0
-		}
+// calculateFitnessWithBreakdown computes fitness and returns detailed breakdown
+func calculateFitnessWithBreakdown(individual []playlist.Track, config config.GAConfig) FitnessBreakdown {
+	return segmentFitnessWithBreakdown(individual, 0, len(individual)-1, config)
+}
+
+// orderCrossover (OX) creates offspring by preserving order from parents
+// This is more exploratory than Edge Recombination Crossover, allowing better escape from local optima
+//
+// Algorithm:
+//  1. Select random substring from parent1 and copy to offspring
+//  2. Fill remaining positions with tracks from parent2 in order, skipping those already present
+//
+// The present map is passed in as a reusable buffer to avoid allocations.
+// The function clears the map at the beginning, so it can be reused across calls.
+func orderCrossover(dst, parent1, parent2 []playlist.Track, present map[string]bool) {
+	numTracks := len(parent1)
+
+	// Clear the map from previous use
+	clear(present)
+
+	// Select two random cut points
+	cut1 := rand.IntN(numTracks)
+	cut2 := rand.IntN(numTracks)
+	if cut1 > cut2 {
+		cut1, cut2 = cut2, cut1
 	}
 
-	// Calculate fitness for the segment [start:end+1]
-	for j := start; j <= end; j++ {
-		// Add edge fitness with current weights
-		if j > 0 {
-			// Use pre-assigned Index values for O(1) cache lookup
-			idx1 := tracks[j-1].Index
-			idx2 := tracks[j].Index
-			edge := edgeDataCache[idx1][idx2]
-
-			// Normalize each component to [0,1] before applying weights
-			// This ensures all weights have equal influence when set to same value
-			breakdown.Harmonic += applyWeightedPenalty(float64(edge.HarmonicDistance), normalizers.MaxHarmonic, config.HarmonicWeight)
-
-			if edge.SameArtist {
-				breakdown.SameArtist += applyWeightedPenalty(1.0, normalizers.MaxSameArtist, config.SameArtistPenalty)
-			}
-			if edge.SameAlbum {
-				breakdown.SameAlbum += applyWeightedPenalty(1.0, normalizers.MaxSameAlbum, config.SameAlbumPenalty)
-			}
-
-			breakdown.EnergyDelta += applyWeightedPenalty(edge.EnergyDelta, normalizers.MaxEnergyDelta, config.EnergyDeltaWeight)
-
-			breakdown.BPMDelta += applyWeightedPenalty(edge.BPMDelta, normalizers.MaxBPMDelta, config.BPMDeltaWeight)
-
-			// Genre penalty: signed weight controls clustering vs spreading
-			if genreEnabled {
-				// Positive weight: penalize changes (clustering)
-				// Negative weight: penalize same genre (spreading)
-				rawPenalty := edge.GenreDifference
-				if genreSign < 0 {
-					rawPenalty = 1.0 - rawPenalty
-				}
-				breakdown.GenreChange += rawPenalty * genreAbsWeight
-			}
-		}
-
-		// Position-based energy penalty
-		if j < biasThreshold {
-			positionWeight := 1.0 - float64(j)/float64(biasThreshold)
-			rawPositionBias := float64(tracks[j].Energy) * positionWeight
-			normalizedPositionBias := rawPositionBias / normalizers.MaxPositionBias
-			energyPositionPenalty := normalizedPositionBias * config.LowEnergyBiasWeight
-			breakdown.PositionBias += energyPositionPenalty
-		}
+	// Copy substring from parent1 to offspring and track present tracks
+	for i := cut1; i <= cut2; i++ {
+		dst[i] = parent1[i]
+		present[parent1[i].Path] = true
 	}
 
-	// Calculate total
-	breakdown.Total = breakdown.Harmonic + breakdown.SameArtist + breakdown.SameAlbum +
-		breakdown.EnergyDelta + breakdown.BPMDelta + breakdown.PositionBias + breakdown.GenreChange
-
-	return breakdown
+	// Fill remaining positions with tracks from parent2 in order
+	dstIdx := (cut2 + 1) % numTracks
+	for i := 0; i < numTracks; i++ {
+		parent2Idx := (cut2 + 1 + i) % numTracks
+		if !present[parent2[parent2Idx].Path] {
+			dst[dstIdx] = parent2[parent2Idx]
+			dstIdx = (dstIdx + 1) % numTracks
+		}
+	}
 }
 
 // twoOptImprove applies 2-opt local search to polish a playlist ordering
@@ -753,6 +651,88 @@ func twoOptImprove(tracks []playlist.Track, config config.GAConfig) {
 	}
 }
 
+// segmentFitness calculates fitness contribution for a track segment
+// Reads base values from cache and applies current config weights at evaluation time
+func segmentFitness(tracks []playlist.Track, start, end int, config config.GAConfig) float64 {
+	return segmentFitnessWithBreakdown(tracks, start, end, config).Total
+}
+
+// segmentFitnessWithBreakdown calculates fitness and returns breakdown of components
+func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config config.GAConfig) FitnessBreakdown {
+	var breakdown FitnessBreakdown
+	biasThreshold := int(float64(len(tracks)) * config.LowEnergyBiasPortion)
+	// Precompute genre-related values to avoid repeated checks and calculations
+	genreEnabled := config.GenreWeight != 0 && normalizers.MaxGenreChange > 0
+	var genreAbsWeight, genreSign float64
+	if genreEnabled {
+		genreAbsWeight = math.Abs(config.GenreWeight) / normalizers.MaxGenreChange
+		if config.GenreWeight > 0 {
+			genreSign = 1.0
+		} else {
+			genreSign = -1.0
+		}
+	}
+
+	// Calculate fitness for the segment [start:end+1]
+	for j := start; j <= end; j++ {
+		// Add edge fitness with current weights
+		if j > 0 {
+			// Use pre-assigned Index values for O(1) cache lookup
+			idx1 := tracks[j-1].Index
+			idx2 := tracks[j].Index
+			edge := edgeDataCache[idx1][idx2]
+
+			// Normalize each component to [0,1] before applying weights
+			// This ensures all weights have equal influence when set to same value
+			breakdown.Harmonic += applyWeightedPenalty(float64(edge.HarmonicDistance), normalizers.MaxHarmonic, config.HarmonicWeight)
+
+			if edge.SameArtist {
+				breakdown.SameArtist += applyWeightedPenalty(1.0, normalizers.MaxSameArtist, config.SameArtistPenalty)
+			}
+			if edge.SameAlbum {
+				breakdown.SameAlbum += applyWeightedPenalty(1.0, normalizers.MaxSameAlbum, config.SameAlbumPenalty)
+			}
+
+			breakdown.EnergyDelta += applyWeightedPenalty(edge.EnergyDelta, normalizers.MaxEnergyDelta, config.EnergyDeltaWeight)
+
+			breakdown.BPMDelta += applyWeightedPenalty(edge.BPMDelta, normalizers.MaxBPMDelta, config.BPMDeltaWeight)
+
+			// Genre penalty: signed weight controls clustering vs spreading
+			if genreEnabled {
+				// Positive weight: penalize changes (clustering)
+				// Negative weight: penalize same genre (spreading)
+				rawPenalty := edge.GenreDifference
+				if genreSign < 0 {
+					rawPenalty = 1.0 - rawPenalty
+				}
+				breakdown.GenreChange += rawPenalty * genreAbsWeight
+			}
+		}
+
+		// Position-based energy penalty
+		if j < biasThreshold {
+			positionWeight := 1.0 - float64(j)/float64(biasThreshold)
+			rawPositionBias := float64(tracks[j].Energy) * positionWeight
+			normalizedPositionBias := rawPositionBias / normalizers.MaxPositionBias
+			energyPositionPenalty := normalizedPositionBias * config.LowEnergyBiasWeight
+			breakdown.PositionBias += energyPositionPenalty
+		}
+	}
+
+	// Calculate total
+	breakdown.Total = breakdown.Harmonic + breakdown.SameArtist + breakdown.SameAlbum +
+		breakdown.EnergyDelta + breakdown.BPMDelta + breakdown.PositionBias + breakdown.GenreChange
+
+	return breakdown
+}
+
+// applyWeightedPenalty normalizes a raw value to [0,1] range and applies a weight
+// This ensures all penalty components have equal influence when weights are equal
+func applyWeightedPenalty(rawValue, maxValue, weight float64) float64 {
+	normalized := rawValue / maxValue
+	return normalized * weight
+}
+
 // reverseSegment reverses tracks[start:end+1] in place
 func reverseSegment(tracks []playlist.Track, start, end int) {
 	for start < end {
@@ -762,47 +742,68 @@ func reverseSegment(tracks []playlist.Track, start, end int) {
 	}
 }
 
-// orderCrossover (OX) creates offspring by preserving order from parents
-// This is more exploratory than Edge Recombination Crossover, allowing better escape from local optima
-// applyWeightedPenalty normalizes a raw value to [0,1] range and applies a weight
-// This ensures all penalty components have equal influence when weights are equal
-func applyWeightedPenalty(rawValue, maxValue, weight float64) float64 {
-	normalized := rawValue / maxValue
-	return normalized * weight
-}
-
-// Algorithm:
-//  1. Select random substring from parent1 and copy to offspring
-//  2. Fill remaining positions with tracks from parent2 in order, skipping those already present
-//
-// The present map is passed in as a reusable buffer to avoid allocations.
-// The function clears the map at the beginning, so it can be reused across calls.
-func orderCrossover(dst, parent1, parent2 []playlist.Track, present map[string]bool) {
-	numTracks := len(parent1)
-
-	// Clear the map from previous use
-	clear(present)
-
-	// Select two random cut points
-	cut1 := rand.IntN(numTracks)
-	cut2 := rand.IntN(numTracks)
-	if cut1 > cut2 {
-		cut1, cut2 = cut2, cut1
+// calculateTheoreticalMinimum calculates the theoretical minimum fitness score
+// This is NOT achievable in practice as the constraints conflict with each other
+// (e.g., monotonic energy vs clustered low energy at start), but provides a lower bound
+func calculateTheoreticalMinimum(tracks []playlist.Track, config config.GAConfig) float64 {
+	n := len(tracks)
+	if n == 0 {
+		return 0.0
 	}
 
-	// Copy substring from parent1 to offspring and track present tracks
-	for i := cut1; i <= cut2; i++ {
-		dst[i] = parent1[i]
-		present[parent1[i].Path] = true
+	// 1. Harmonic: Best case = all tracks have perfect harmonic compatibility (distance 0)
+	minHarmonic := 0.0
+
+	// 2. Same Artist: Best case = no consecutive tracks from same artist
+	minSameArtist := 0.0
+
+	// 3. Same Album: Best case = no consecutive tracks from same album
+	minSameAlbum := 0.0
+
+	// 4. Energy Delta: Best case = tracks sorted by energy (monotonic increase/decrease)
+	energies := make([]int, n)
+	for i, t := range tracks {
+		energies[i] = t.Energy
+	}
+	slices.Sort(energies)
+	minEnergyDelta := 0.0
+	for i := 1; i < n; i++ {
+		minEnergyDelta += math.Abs(float64(energies[i] - energies[i-1]))
+	}
+	if normalizers.MaxEnergyDelta > 0 {
+		minEnergyDelta = (minEnergyDelta / normalizers.MaxEnergyDelta) * config.EnergyDeltaWeight
 	}
 
-	// Fill remaining positions with tracks from parent2 in order
-	dstIdx := (cut2 + 1) % numTracks
-	for i := 0; i < numTracks; i++ {
-		parent2Idx := (cut2 + 1 + i) % numTracks
-		if !present[parent2[parent2Idx].Path] {
-			dst[dstIdx] = parent2[parent2Idx]
-			dstIdx = (dstIdx + 1) % numTracks
+	// 5. BPM Delta: Best case = tracks sorted by BPM
+	bpms := make([]float64, 0, n)
+	for _, t := range tracks {
+		if t.BPM > 0 {
+			bpms = append(bpms, t.BPM)
 		}
 	}
+	slices.Sort(bpms)
+	minBPMDelta := 0.0
+	for i := 1; i < len(bpms); i++ {
+		minBPMDelta += math.Abs(bpms[i] - bpms[i-1])
+	}
+	if normalizers.MaxBPMDelta > 0 && len(bpms) > 1 {
+		minBPMDelta = (minBPMDelta / normalizers.MaxBPMDelta) * config.BPMDeltaWeight
+	}
+
+	// 6. Position Bias: Best case = lowest energy tracks at start
+	biasThreshold := int(float64(n) * config.LowEnergyBiasPortion)
+	minPositionBias := 0.0
+	for j := 0; j < biasThreshold && j < n; j++ {
+		positionWeight := 1.0 - float64(j)/float64(biasThreshold)
+		rawBias := float64(energies[j]) * positionWeight
+		if normalizers.MaxPositionBias > 0 {
+			minPositionBias += (rawBias / normalizers.MaxPositionBias) * config.LowEnergyBiasWeight
+		}
+	}
+
+	// 7. Genre: Best case = 0 (either all same genre or all different, depending on weight direction)
+	minGenre := 0.0
+
+	return minHarmonic + minSameArtist + minSameAlbum +
+		minEnergyDelta + minBPMDelta + minPositionBias + minGenre
 }
