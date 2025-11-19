@@ -82,7 +82,16 @@ func LoadPlaylistWithMetadata(path string, verbose bool) ([]Track, error) {
 
 // WritePlaylist writes a slice of tracks to an M3U8 playlist file
 // Only writes the Path field of each track (not metadata)
+// Creates a backup (.bak) of the existing file before overwriting
 func WritePlaylist(path string, tracks []Track) error {
+	// Create backup if file exists
+	if _, err := os.Stat(path); err == nil {
+		backupPath := path + ".bak"
+		if err := os.Rename(path, backupPath); err != nil {
+			return fmt.Errorf("failed to create backup: %w", err)
+		}
+	}
+
 	file, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("failed to create playlist: %w", err)
