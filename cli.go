@@ -117,17 +117,6 @@ func RunCLI(opts CLIOptions) error {
 	return nil
 }
 
-// truncate truncates a string to maxLen characters, adding "..." if needed
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
-}
-
 // cliGeneticSort wraps geneticSort with CLI-specific progress display
 func cliGeneticSort(ctx context.Context, tracks []playlist.Track, config *SharedConfig, playlistPath string) []playlist.Track {
 	startTime := time.Now()
