@@ -388,3 +388,100 @@ func TestReverseSegment(t *testing.T) {
 		})
 	}
 }
+
+// ========== Benchmarks ==========
+
+// BenchmarkCalculateFitness measures fitness calculation performance (hot path)
+func BenchmarkCalculateFitness(b *testing.B) {
+	// Use 10 tracks to match the cache size from init()
+	// Cache is built once in init() with indices 0-9
+	tracks := make([]playlist.Track, 10)
+	for i := range tracks {
+		key := string(rune('1'+(i%12))) + "A"
+		tracks[i] = playlist.Track{
+			Index:     i,
+			Path:      string(rune('A' + i)),
+			Key:       key,
+			ParsedKey: parseKey(key),
+			BPM:       80.0 + float64(i*20),
+			Energy:    i * 10,
+			Artist:    "Artist" + string(rune('A'+i)),
+			Album:     "Album" + string(rune('A'+i)),
+			Genre:     "Electronic",
+		}
+	}
+
+	cfg := config.DefaultConfig()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		calculateFitness(tracks, cfg)
+	}
+}
+
+// BenchmarkCalculateFitnessWithBreakdown measures breakdown calculation (used in TUI)
+func BenchmarkCalculateFitnessWithBreakdown(b *testing.B) {
+	// Use 10 tracks to match the cache size from init()
+	tracks := make([]playlist.Track, 10)
+	for i := range tracks {
+		key := string(rune('1'+(i%12))) + "A"
+		tracks[i] = playlist.Track{
+			Index:     i,
+			Path:      string(rune('A' + i)),
+			Key:       key,
+			ParsedKey: parseKey(key),
+			BPM:       80.0 + float64(i*20),
+			Energy:    i * 10,
+			Artist:    "Artist" + string(rune('A'+i)),
+			Album:     "Album" + string(rune('A'+i)),
+			Genre:     "Electronic",
+		}
+	}
+
+	cfg := config.DefaultConfig()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		calculateFitnessWithBreakdown(tracks, cfg)
+	}
+}
+
+// BenchmarkOrderCrossover measures crossover operation performance
+func BenchmarkOrderCrossover(b *testing.B) {
+	tracks := make([]playlist.Track, 50)
+	for i := range tracks {
+		tracks[i] = playlist.Track{
+			Index: i,
+			Path:  string(rune('A' + i)),
+		}
+	}
+
+	parent1 := make([]playlist.Track, 50)
+	parent2 := make([]playlist.Track, 50)
+	child := make([]playlist.Track, 50)
+	present := make(map[string]bool, 50)
+
+	copy(parent1, tracks)
+	// Reverse for parent2
+	for i := range tracks {
+		parent2[i] = tracks[49-i]
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		orderCrossover(child, parent1, parent2, present)
+	}
+}
+
+// BenchmarkReverseSegment measures mutation operation performance
+func BenchmarkReverseSegment(b *testing.B) {
+	tracks := make([]playlist.Track, 100)
+	for i := range tracks {
+		tracks[i] = playlist.Track{Index: i}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		reverseSegment(tracks, 25, 75)
+	}
+}
