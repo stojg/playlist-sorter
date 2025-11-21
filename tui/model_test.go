@@ -1,4 +1,4 @@
-// ABOUTME: Integration tests for TUI model behavior
+// ABOUTME: Unit tests for TUI model behavior
 // ABOUTME: Tests model initialization, state management, and core operations
 
 package tui
