@@ -551,22 +551,21 @@ type PlaylistState struct {
 
 // UndoManager manages undo/redo stacks with maximum size limit
 type UndoManager struct {
-	undoStack []PlaylistState
-	redoStack []PlaylistState
-	maxSize   int
+	history []PlaylistState
+	cursor  int // Number of states we can undo to (index of current checkpoint + 1)
+	maxSize int
 }
 
 // NewUndoManager creates a new undo manager with the specified max stack size
 func NewUndoManager(maxSize int) *UndoManager {
 	return &UndoManager{
-		undoStack: []PlaylistState{},
-		redoStack: []PlaylistState{},
-		maxSize:   maxSize,
+		history: []PlaylistState{},
+		cursor:  0,
+		maxSize: maxSize,
 	}
 }
 
-// Push saves a new state to the undo stack
-// Clears the redo stack (you can't redo after a new action)
+// Push saves a new state as a checkpoint
 func (um *UndoManager) Push(state PlaylistState) {
 	// Make a deep copy of tracks
 	stateCopy := PlaylistState{
@@ -574,85 +573,87 @@ func (um *UndoManager) Push(state PlaylistState) {
 		CursorPos: state.CursorPos,
 	}
 
-	um.undoStack = append(um.undoStack, stateCopy)
+	// Truncate history at cursor (clears redo states)
+	um.history = um.history[:um.cursor]
+
+	// Append new state
+	um.history = append(um.history, stateCopy)
+	um.cursor++
 
 	// Enforce max size
-	if len(um.undoStack) > um.maxSize {
-		um.undoStack = um.undoStack[1:]
+	if len(um.history) > um.maxSize {
+		um.history = um.history[1:]
+		um.cursor--
 	}
-
-	// Clear redo stack on new edit
-	um.redoStack = []PlaylistState{}
 }
 
 // Undo restores the previous state
 // Returns the state and true if undo was successful, or zero value and false if nothing to undo
 func (um *UndoManager) Undo(currentState PlaylistState) (PlaylistState, bool) {
-	if len(um.undoStack) == 0 {
+	if um.cursor == 0 {
 		return PlaylistState{}, false
 	}
 
-	// Save current state to redo stack
-	redoState := PlaylistState{
+	// Save current state after cursor position
+	stateCopy := PlaylistState{
 		Tracks:    append([]playlist.Track{}, currentState.Tracks...),
 		CursorPos: currentState.CursorPos,
 	}
 
-	um.redoStack = append(um.redoStack, redoState)
-
-	// Enforce max size on redo stack
-	if len(um.redoStack) > um.maxSize {
-		um.redoStack = um.redoStack[1:]
+	// Extend history if needed to store current state
+	if um.cursor >= len(um.history) {
+		um.history = append(um.history, stateCopy)
+	} else {
+		um.history[um.cursor] = stateCopy
 	}
 
-	// Pop from undo stack
-	state := um.undoStack[len(um.undoStack)-1]
-	um.undoStack = um.undoStack[:len(um.undoStack)-1]
+	// Move cursor back
+	um.cursor--
 
-	return state, true
+	// Return previous state
+	return um.history[um.cursor], true
 }
 
 // Redo restores the next state
 // Returns the state and true if redo was successful, or zero value and false if nothing to redo
 func (um *UndoManager) Redo(currentState PlaylistState) (PlaylistState, bool) {
-	if len(um.redoStack) == 0 {
+	if um.cursor >= len(um.history) {
 		return PlaylistState{}, false
 	}
 
-	// Save current state to undo stack
-	undoState := PlaylistState{
+	// Save current state at cursor position
+	stateCopy := PlaylistState{
 		Tracks:    append([]playlist.Track{}, currentState.Tracks...),
 		CursorPos: currentState.CursorPos,
 	}
+	um.history[um.cursor] = stateCopy
 
-	um.undoStack = append(um.undoStack, undoState)
+	// Move cursor forward
+	um.cursor++
 
-	// Enforce max size on undo stack
-	if len(um.undoStack) > um.maxSize {
-		um.undoStack = um.undoStack[1:]
-	}
-
-	// Pop from redo stack
-	state := um.redoStack[len(um.redoStack)-1]
-	um.redoStack = um.redoStack[:len(um.redoStack)-1]
-
-	return state, true
+	// Return next state
+	return um.history[um.cursor], true
 }
 
-// UndoSize returns the number of items in the undo stack
+// UndoSize returns the number of states we can undo to
 func (um *UndoManager) UndoSize() int {
-	return len(um.undoStack)
+	return um.cursor
 }
 
-// RedoSize returns the number of items in the redo stack
+// RedoSize returns the number of states we can redo to
 func (um *UndoManager) RedoSize() int {
-	return len(um.redoStack)
+	// After undo, history[cursor] is current state, history[cursor+1..] are redo states
+	available := len(um.history) - um.cursor - 1
+	if available < 0 {
+		return 0
+	}
+	return available
 }
 
-// Clear clears both stacks
+// Clear clears the history
 func (um *UndoManager) Clear() {
-	um.undoStack = []PlaylistState{}
-	um.redoStack = []PlaylistState{}
+	um.history = []PlaylistState{}
+	um.cursor = 0
 }
 
 // ========== Viewport Manager ==========
