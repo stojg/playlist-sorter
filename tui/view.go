@@ -72,15 +72,18 @@ func (m model) renderParameters() string {
 	if m.focusedPanel == panelParams {
 		title = "► " + title + " [FOCUSED]"
 	}
+
 	s += titleStyle.Render(title) + "\n\n"
 
 	for i, param := range m.params {
 		var value string
-		if param.IsInt && param.IntValue != nil {
+
+		switch {
+		case param.IsInt && param.IntValue != nil:
 			value = strconv.Itoa(*param.IntValue)
-		} else if !param.IsInt && param.Value != nil {
+		case !param.IsInt && param.Value != nil:
 			value = fmt.Sprintf("%.2f", *param.Value)
-		} else {
+		default:
 			value = "N/A"
 		}
 
@@ -110,9 +113,11 @@ func (m model) renderPlaylist() string {
 	if m.editMode {
 		title = "Playlist (EDIT MODE)"
 	}
+
 	if m.focusedPanel == panelPlaylist {
 		title = "► " + title + " [FOCUSED]"
 	}
+
 	s += titleStyle.Render(title) + "\n\n"
 
 	// Header

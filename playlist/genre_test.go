@@ -212,6 +212,7 @@ func TestGetAncestorChain(t *testing.T) {
 				t.Errorf("Expected chain length %d, got %d", len(tt.expectedChain), len(chain))
 				t.Logf("Expected: %v", tt.expectedChain)
 				t.Logf("Got: %v", chain)
+
 				return
 			}
 

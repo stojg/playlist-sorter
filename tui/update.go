@@ -60,6 +60,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Ignore stale updates from old GA runs
 		if msg.Epoch != m.gaEpoch {
 			m.debugf("[TUI] Ignoring stale Update: epoch %d != current %d", msg.Epoch, m.gaEpoch)
+
 			return m, waitForUpdate(m.updateChan)
 		}
 
@@ -75,6 +76,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Track improvements for time-since-improvement display
 		// Only count as "improvement" if track order actually changed
 		fitnessImproved := false
+
 		if tracksChanged {
 			// Track order changed - this is a real improvement
 			oldFitness := m.bestFitness
@@ -87,6 +89,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.previousBestFitness = oldFitness
 			m.lastImprovementTime = time.Now()
 			fitnessImproved = true
+
 			m.debugf("[TUI] Tracks reordered: %.8f -> %.8f (epoch %d, gen %d)", oldFitness, msg.BestFitness, msg.Epoch, msg.Generation)
 		} else if msg.BestFitness < m.bestFitness || m.bestFitness == 0 {
 			// Fitness improved but order didn't change - just log it
@@ -198,11 +201,11 @@ func (m *model) handleQuitKey() (model, tea.Cmd) {
 	m.quitting = true
 	// Cancel GA context
 	m.cancel()
-	// Save config on quit
+	// Save config on quit (don't block quit on failure)
 	if err := config.SaveConfig(m.configPath, m.sharedConfig.Get()); err != nil {
 		m.debugf("[TUI] Failed to save config on quit: %v", err)
-		// Continue anyway - don't block quit on config save failure
 	}
+
 	return *m, tea.Quit
 }
 
@@ -268,6 +271,7 @@ func (m *model) handlePageUpKey() {
 	if m.cursorPos < 0 {
 		m.cursorPos = 0
 	}
+
 	m.ensureCursorVisible()
 	m.updateViewportContent()
 }
@@ -278,6 +282,7 @@ func (m *model) handlePageDownKey() {
 	if m.cursorPos >= len(m.displayedTracks) {
 		m.cursorPos = len(m.displayedTracks) - 1
 	}
+
 	m.ensureCursorVisible()
 	m.updateViewportContent()
 }
@@ -294,6 +299,7 @@ func (m *model) handleEndKey() {
 	if len(m.displayedTracks) > 0 {
 		m.cursorPos = len(m.displayedTracks) - 1
 	}
+
 	m.ensureCursorVisible()
 	m.updateViewportContent()
 }
@@ -303,6 +309,7 @@ func (m *model) handleLeftKey() tea.Cmd {
 	if m.focusedPanel == panelParams {
 		return m.decreaseSelectedParam()
 	}
+
 	return nil
 }
 
@@ -311,5 +318,6 @@ func (m *model) handleRightKey() tea.Cmd {
 	if m.focusedPanel == panelParams {
 		return m.increaseSelectedParam()
 	}
+
 	return nil
 }

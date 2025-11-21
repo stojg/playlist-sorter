@@ -134,6 +134,7 @@ func TestViewportManager_SmallList(t *testing.T) {
 func TestViewportManager_EdgeCases(t *testing.T) {
 	t.Run("empty list", func(t *testing.T) {
 		vm := NewViewportManager(10, 0, 0)
+
 		offset := vm.CalculateOffset()
 		if offset != 0 {
 			t.Errorf("Empty list should return offset 0, got %d", offset)
@@ -142,6 +143,7 @@ func TestViewportManager_EdgeCases(t *testing.T) {
 
 	t.Run("zero height viewport", func(t *testing.T) {
 		vm := NewViewportManager(0, 5, 50)
+
 		offset := vm.CalculateOffset()
 		if offset != 0 {
 			t.Errorf("Zero height viewport should return offset 0, got %d", offset)
@@ -150,6 +152,7 @@ func TestViewportManager_EdgeCases(t *testing.T) {
 
 	t.Run("single item list", func(t *testing.T) {
 		vm := NewViewportManager(10, 0, 1)
+
 		offset := vm.CalculateOffset()
 		if offset != 0 {
 			t.Errorf("Single item should return offset 0, got %d", offset)
@@ -208,7 +211,8 @@ func TestViewportManager_PhaseTransitions(t *testing.T) {
 
 	// Track offset as cursor moves from top to bottom
 	var offsets []int
-	for pos := 0; pos < 50; pos++ {
+
+	for pos := range 50 {
 		vm.SetCursorPos(pos)
 		offsets = append(offsets, vm.CalculateOffset())
 	}
@@ -221,7 +225,7 @@ func TestViewportManager_PhaseTransitions(t *testing.T) {
 	}
 
 	// Verify phase 1: positions 0-4 should have offset 0
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if offsets[i] != 0 {
 			t.Errorf("Position %d in top phase has offset %d, want 0", i, offsets[i])
 		}

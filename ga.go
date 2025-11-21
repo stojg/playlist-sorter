@@ -184,6 +184,7 @@ func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *con
 	for i := range scoredPopulation {
 		scoredPopulation[i].Genes = make([]playlist.Track, genesLen)
 	}
+
 	presentMap := make(map[string]bool, genesLen)
 
 	nextGen := make([][]playlist.Track, populationSize)

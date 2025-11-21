@@ -17,6 +17,7 @@ func createTestState(trackCount, cursorPos int) PlaylistState {
 			Title: string(rune('A' + i)),
 		}
 	}
+
 	return PlaylistState{
 		Tracks:    tracks,
 		CursorPos: cursorPos,
@@ -68,6 +69,7 @@ func TestUndoManager_Redo(t *testing.T) {
 
 	// Undo to populate redo stack
 	state2 := createTestState(4, 1)
+
 	restored, ok := um.Undo(state2)
 	if !ok {
 		t.Fatal("Undo should succeed")
@@ -127,7 +129,7 @@ func TestUndoManager_MaxStackSize(t *testing.T) {
 	um := NewUndoManager(3) // Small max size for testing
 
 	// Push 5 states (exceeds max)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		state := createTestState(i+1, i)
 		um.Push(state)
 	}
@@ -140,8 +142,10 @@ func TestUndoManager_MaxStackSize(t *testing.T) {
 	// Oldest states should be discarded
 	// We should be able to undo 3 times
 	currentState := createTestState(6, 5)
-	for i := 0; i < 3; i++ {
+
+	for i := range 3 {
 		var ok bool
+
 		currentState, ok = um.Undo(currentState)
 		if !ok {
 			t.Errorf("Undo %d failed, should have 3 items", i+1)
@@ -159,15 +163,17 @@ func TestUndoManager_MaxRedoStackSize(t *testing.T) {
 	um := NewUndoManager(3) // Small max size
 
 	// Build up undo stack
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		state := createTestState(i+1, i)
 		um.Push(state)
 	}
 
 	// Undo multiple times to build redo stack
 	currentState := createTestState(6, 5)
-	for i := 0; i < 5; i++ {
+
+	for range 5 {
 		var ok bool
+
 		currentState, ok = um.Undo(currentState)
 		if !ok {
 			break
@@ -233,6 +239,7 @@ func TestUndoManager_DeepCopy(t *testing.T) {
 
 	// Undo should return unmodified state
 	currentState := createTestState(2, 1)
+
 	restored, ok := um.Undo(currentState)
 	if !ok {
 		t.Fatal("Undo failed")
@@ -258,6 +265,7 @@ func TestUndoManager_Clear(t *testing.T) {
 	if um.UndoSize() == 0 {
 		t.Fatal("Undo stack should not be empty")
 	}
+
 	if um.RedoSize() == 0 {
 		t.Fatal("Redo stack should not be empty")
 	}
@@ -284,15 +292,18 @@ func TestUndoManager_SizeTracking(t *testing.T) {
 
 	// Push increases undo size
 	um.Push(createTestState(5, 0))
+
 	if um.UndoSize() != 1 {
 		t.Errorf("After push, undo size = %d, want 1", um.UndoSize())
 	}
 
 	// Undo decreases undo size, increases redo size
 	um.Undo(createTestState(4, 1))
+
 	if um.UndoSize() != 0 {
 		t.Errorf("After undo, undo size = %d, want 0", um.UndoSize())
 	}
+
 	if um.RedoSize() != 1 {
 		t.Errorf("After undo, redo size = %d, want 1", um.RedoSize())
 	}

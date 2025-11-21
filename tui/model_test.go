@@ -57,6 +57,7 @@ func createTestTracks(count int) []playlist.Track {
 			Energy: 50,
 		}
 	}
+
 	return tracks
 }
 
@@ -186,7 +187,7 @@ func TestUndoRedoStackLimits(t *testing.T) {
 	m := createTestModel(tracks)
 
 	// Delete 55 tracks to exceed stack limit (max 50)
-	for i := 0; i < 55; i++ {
+	for range 55 {
 		m.cursorPos = 0
 		_ = m.deleteTrack()
 	}

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"os"
 	"slices"
 	"testing"
 
@@ -14,8 +15,7 @@ import (
 // testCtx holds the GAContext for all tests
 var testCtx *GAContext
 
-// Initialize edge cache once for all tests with a reasonable size
-func init() {
+func TestMain(m *testing.M) {
 	// Build cache with 10 test tracks (enough for all fitness tests)
 	// Use varying energy and BPM to avoid division by zero in normalizers
 	testTracks := make([]playlist.Track, 10)
@@ -33,12 +33,16 @@ func init() {
 			Genre:     "Electronic",
 		}
 	}
+
 	testCtx = buildEdgeFitnessCache(testTracks)
+
+	os.Exit(m.Run())
 }
 
 // parseKey is a helper to parse keys for test tracks
 func parseKey(key string) *playlist.CamelotKey {
 	parsed, _ := playlist.ParseCamelotKey(key)
+
 	return parsed
 }
 
@@ -417,7 +421,8 @@ func BenchmarkCalculateFitness(b *testing.B) {
 	cfg := config.DefaultConfig()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for range b.N {
 		calculateFitness(tracks, cfg, testCtx)
 	}
 }
@@ -444,7 +449,8 @@ func BenchmarkCalculateFitnessWithBreakdown(b *testing.B) {
 	cfg := config.DefaultConfig()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for range b.N {
 		calculateFitnessWithBreakdown(tracks, cfg, testCtx)
 	}
 }
@@ -471,7 +477,8 @@ func BenchmarkOrderCrossover(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for range b.N {
 		orderCrossover(child, parent1, parent2, present)
 	}
 }
@@ -484,7 +491,8 @@ func BenchmarkReverseSegment(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for range b.N {
 		reverseSegment(tracks, 25, 75)
 	}
 }

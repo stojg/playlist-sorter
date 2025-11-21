@@ -56,6 +56,7 @@ func run() int {
 		if *debug {
 			if err := SetupDebugLog("playlist-sorter-debug.log"); err != nil {
 				log.Printf("Failed to setup debug log: %v", err)
+
 				return 1
 			}
 		}
@@ -77,6 +78,7 @@ func run() int {
 		}
 		loadPlaylist := func(path string, requireMultiple bool) ([]playlist.Track, error) {
 			allowSingle := !requireMultiple
+
 			return LoadPlaylistForMode(PlaylistOptions{Path: path, Verbose: false}, allowSingle)
 		}
 
@@ -169,6 +171,7 @@ func runGAForTUI(ctx context.Context, tracks []playlist.Track, sharedCfg *config
 						if !ok {
 							return
 						}
+
 						tuiUpdate := tui.Update{
 							BestPlaylist: update.BestPlaylist,
 							BestFitness:  update.BestFitness,
@@ -208,6 +211,7 @@ func runGAForTUI(ctx context.Context, tracks []playlist.Track, sharedCfg *config
 	}()
 
 	gaCtx := buildEdgeFitnessCache(tracks)
+
 	defer close(gaUpdateChan)
 
 	geneticSort(ctx, tracks, sharedCfg, gaUpdateChan, epoch, gaCtx)

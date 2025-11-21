@@ -153,6 +153,7 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, sharedCfg *con
 			// Non-TTY: skip spinner updates entirely to avoid log spam
 			return
 		}
+
 		elapsed := time.Since(startTime)
 		fmt.Printf("\r%s Gen %d %s     ", formatElapsed(elapsed), gen, spinnerFrames[spinnerIdx])
 		spinnerIdx = (spinnerIdx + 1) % len(spinnerFrames)
@@ -162,6 +163,7 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, sharedCfg *con
 	var bestIndividual []playlist.Track
 
 	done := make(chan []playlist.Track)
+
 	defer close(updateChan)
 
 	go func() {

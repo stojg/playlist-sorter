@@ -394,15 +394,18 @@ func increaseParam(param *Parameter) bool {
 		newVal := *param.IntValue + int(param.Step)
 		if float64(newVal) <= param.Max {
 			*param.IntValue = newVal
+
 			return true
 		}
 	} else {
 		newVal := *param.Value + param.Step
 		if newVal <= param.Max {
 			*param.Value = newVal
+
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -413,6 +416,7 @@ func decreaseParam(param *Parameter) bool {
 		newVal := *param.IntValue - int(param.Step)
 		if float64(newVal) >= param.Min {
 			*param.IntValue = newVal
+
 			return true
 		}
 	} else {
@@ -424,9 +428,11 @@ func decreaseParam(param *Parameter) bool {
 
 		if newVal >= param.Min {
 			*param.Value = newVal
+
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -562,6 +568,7 @@ func (um *UndoManager) RedoSize() int {
 	if available < 0 {
 		return 0
 	}
+
 	return available
 }
 
@@ -651,14 +658,17 @@ func (vm *ViewportManager) GetPhase() ScrollPhase {
 	if vm.totalItems == 0 || vm.height < 1 {
 		return TopPhase
 	}
+
 	middle := vm.height / 2
 	if vm.cursorPos < middle {
 		return TopPhase
 	}
+
 	bottomThreshold := vm.totalItems - vm.height + middle
 	if vm.cursorPos < bottomThreshold {
 		return MiddlePhase
 	}
+
 	return BottomPhase
 }
 
@@ -687,6 +697,7 @@ func (m *model) startGA(ctx context.Context, tracks []playlist.Track, epoch int)
 
 		// Run GA via injected function (blocks until context cancelled or GA completes)
 		m.runGA(ctx, tracks, m.updateChan, epoch)
+
 		return nil
 	}
 }
@@ -709,6 +720,7 @@ func (m *model) increaseSelectedParam() tea.Cmd {
 	if m.selectedParam < len(m.params) && increaseParam(&m.params[m.selectedParam]) {
 		return m.syncConfigToGA()
 	}
+
 	return nil
 }
 
@@ -717,6 +729,7 @@ func (m *model) decreaseSelectedParam() tea.Cmd {
 	if m.selectedParam < len(m.params) && decreaseParam(&m.params[m.selectedParam]) {
 		return m.syncConfigToGA()
 	}
+
 	return nil
 }
 
@@ -724,6 +737,7 @@ func (m *model) decreaseSelectedParam() tea.Cmd {
 func (m *model) resetToDefaults() tea.Cmd {
 	defaults := config.DefaultConfig()
 	resetParamsToDefaults(m.params, defaults)
+
 	return m.syncConfigToGA()
 }
 
@@ -734,12 +748,15 @@ func (m *model) syncConfigToGA() tea.Cmd {
 	// Just copy the entire struct to shared config (thread-safe)
 	if m.selectedParam < len(m.params) {
 		selected := &m.params[m.selectedParam]
+
 		var value float64
+
 		if selected.IsInt {
 			value = float64(*selected.IntValue)
 		} else {
 			value = *selected.Value
 		}
+
 		m.debugf("[TUI] Parameter changed - %s: %.2f (Harmonic: %.2f, Energy: %.2f, BPM: %.2f)",
 			selected.Name,
 			value,
@@ -747,6 +764,7 @@ func (m *model) syncConfigToGA() tea.Cmd {
 			m.localConfig.EnergyDeltaWeight,
 			m.localConfig.BPMDeltaWeight)
 	}
+
 	m.sharedConfig.Update(*m.localConfig)
 
 	// Increment epoch immediately to invalidate any pending GA updates with old weights
@@ -827,6 +845,7 @@ func (m *model) undo() tea.Cmd {
 	state, ok := m.undoMgr.Undo(currentState)
 	if !ok {
 		m.setStatusMsg("Nothing to undo")
+
 		return nil
 	}
 
@@ -861,6 +880,7 @@ func (m *model) redo() tea.Cmd {
 	state, ok := m.undoMgr.Redo(currentState)
 	if !ok {
 		m.setStatusMsg("Nothing to redo")
+
 		return nil
 	}
 
