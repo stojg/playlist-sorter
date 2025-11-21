@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
-	"time"
 
 	"playlist-sorter/config"
 	"playlist-sorter/playlist"
@@ -233,16 +232,7 @@ func runGAForTUI(ctx context.Context, tracks []playlist.Track, sharedCfg *config
 
 	// Build edge fitness cache (required for fitness calculations)
 	gaCtx := buildEdgeFitnessCache(tracks)
+	defer close(gaUpdateChan)
 
-	// Create tracker with the GA update channel
-	tracker := &Tracker{
-		updateChan:   gaUpdateChan,
-		sharedConfig: sharedCfg,
-		gaCtx:        gaCtx,
-		epoch:        epoch,
-		lastGenTime:  time.Now(),
-	}
-	defer tracker.Close()
-
-	geneticSort(ctx, tracks, sharedCfg, tracker, gaCtx)
+	geneticSort(ctx, tracks, sharedCfg, gaUpdateChan, epoch, gaCtx)
 }

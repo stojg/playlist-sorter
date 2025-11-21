@@ -100,6 +100,9 @@ const (
 	twoOptIntervalGens   = 100   // Apply 2-opt every N generations after start
 	floatingPointEpsilon = 1e-10 // Threshold for floating-point comparisons
 
+	// Progress update parameters
+	updateIntervalGenerations = 50 // Send updates every N generations (unless fitness improves)
+
 	// Music theory constants
 	camelotWheelPositions = 12 // Number of positions in the Camelot wheel (music theory)
 )
@@ -316,8 +319,33 @@ loop:
 			generationsWithoutImprovement++
 		}
 
-		// Send progress update
-		progress.SendUpdate(gen, bestIndividual, fitnessImproved)
+		// Send progress update (inlined from Tracker)
+		if updateChan != nil && (fitnessImproved || gen%updateIntervalGenerations == 0) {
+			now := time.Now()
+			elapsed := now.Sub(lastGenTime).Seconds()
+			genPerSec := 0.0
+			if elapsed > 0 {
+				genPerSec = float64(gen-lastGenCount) / elapsed
+			}
+
+			config = sharedConfig.Get()
+			breakdown := calculateFitnessWithBreakdown(bestIndividual, config, gaCtx)
+
+			select {
+			case updateChan <- GAUpdate{
+				Epoch:        epoch,
+				Generation:   gen,
+				BestFitness:  breakdown.Total,
+				BestPlaylist: slices.Clone(bestIndividual),
+				GenPerSec:    genPerSec,
+				Breakdown:    breakdown,
+			}:
+			default:
+			}
+
+			lastGenTime = now
+			lastGenCount = gen
+		}
 
 		// Now we start the genetic algorithm itself
 

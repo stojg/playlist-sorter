@@ -169,17 +169,10 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, sharedCfg *con
 	var bestIndividual []playlist.Track
 
 	done := make(chan []playlist.Track)
-
-	progress := &Tracker{
-		updateChan:   updateChan,
-		sharedConfig: sharedCfg,
-		gaCtx:        gaCtx,
-		lastGenTime:  startTime,
-	}
-	defer progress.Close()
+	defer close(updateChan)
 
 	go func() {
-		result := geneticSort(ctx, tracks, sharedCfg, progress, gaCtx)
+		result := geneticSort(ctx, tracks, sharedCfg, updateChan, 0, gaCtx)
 		done <- result
 	}()
 
