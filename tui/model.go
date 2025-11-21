@@ -79,16 +79,16 @@ type model struct {
 	configPath  string           // Config file path
 
 	// GA state
-	bestPlaylist         []playlist.Track // Best playlist from GA
-	originalTracks       []playlist.Track // Original tracks (for restart in Phase 5)
+	bestPlaylist         []playlist.Track   // Best playlist from GA
+	originalTracks       []playlist.Track   // Original tracks (for restart in Phase 5)
 	bestFitness          float64            // Current best fitness
 	previousBestFitness  float64            // Fitness at last improvement (for delta calculation)
 	lastImprovementDelta float64            // Fitness improvement amount from last improvement
 	breakdown            playlist.Breakdown // Fitness breakdown (shared type)
 	generation           int                // Current generation
-	genPerSec            float64          // Generations per second
-	lastImprovementTime  time.Time        // Time of last fitness improvement
-	timeSinceImprovement time.Duration    // Duration since last improvement
+	genPerSec            float64            // Generations per second
+	lastImprovementTime  time.Time          // Time of last fitness improvement
+	timeSinceImprovement time.Duration      // Duration since last improvement
 
 	// GA lifecycle
 	// Framework exception: Context stored in struct because Bubble Tea's Init/Update/View
@@ -363,7 +363,6 @@ func truncate(s string, maxLen int) string {
 }
 
 // ========== Types and Dependencies ==========
-
 
 // SharedConfig provides thread-safe access to GA configuration.
 // Minimal interface discovered by TUI, not mandated to providers.
@@ -692,11 +691,6 @@ func (vm *ViewportManager) SetCursorPos(pos int) {
 	vm.cursorPos = pos
 }
 
-// SetTotalItems updates the total item count
-func (vm *ViewportManager) SetTotalItems(total int) {
-	vm.totalItems = total
-}
-
 // CalculateOffset computes the viewport Y offset to keep cursor visible
 // Returns the offset value that should be applied to the viewport
 //
@@ -768,7 +762,6 @@ func (m model) Init() tea.Cmd {
 		tea.EnterAltScreen,
 	)
 }
-
 
 // ========== Helper Methods ==========
 

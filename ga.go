@@ -151,20 +151,21 @@ func (sc *SharedConfig) Update(cfg config.GAConfig) {
 // DJs often mix tracks at 2:1 or 1:2 tempo ratios (e.g., 85 BPM mixes well with 170 BPM).
 func minBPMDistance(bpm1, bpm2 float64) float64 {
 	distances := []float64{
-		math.Abs(bpm1 - bpm2),      // 1:1 (same tempo)
-		math.Abs(bpm1*0.5 - bpm2),  // 1:2 (first track at half time)
-		math.Abs(bpm1 - bpm2*0.5),  // 2:1 (second track at half time)
-		math.Abs(bpm1*2.0 - bpm2),  // 2:1 (first track at double time)
-		math.Abs(bpm1 - bpm2*2.0),  // 1:2 (second track at double time)
+		math.Abs(bpm1 - bpm2),     // 1:1 (same tempo)
+		math.Abs(bpm1*0.5 - bpm2), // 1:2 (first track at half time)
+		math.Abs(bpm1 - bpm2*0.5), // 2:1 (second track at half time)
+		math.Abs(bpm1*2.0 - bpm2), // 2:1 (first track at double time)
+		math.Abs(bpm1 - bpm2*2.0), // 1:2 (second track at double time)
 	}
 
-	min := distances[0]
+	minDist := distances[0]
 	for _, d := range distances[1:] {
-		if d < min {
-			min = d
+		if d < minDist {
+			minDist = d
 		}
 	}
-	return min
+
+	return minDist
 }
 
 // EdgeData stores pre-calculated base values for track transitions (without weights applied)

@@ -30,7 +30,6 @@ type PlaylistOptions struct {
 	Verbose bool
 }
 
-
 // OptimizationContext contains the loaded playlist and associated data
 type OptimizationContext struct {
 	Tracks       []playlist.Track

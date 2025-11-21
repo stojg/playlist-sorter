@@ -63,6 +63,7 @@ func (m model) View() string {
 
 	return combined + "\n" + statusBar + "\n" + breakdown + "\n" + m.renderHelp()
 }
+
 // renderParameters renders the parameter control panel
 func (m model) renderParameters() string {
 	var s string

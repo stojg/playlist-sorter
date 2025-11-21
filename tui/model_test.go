@@ -35,19 +35,19 @@ func createTestModel(tracks []playlist.Track) model {
 	sharedCfg := &mockSharedConfig{cfg: config.DefaultConfig()}
 
 	// Mock functions for testing
-	mockRunGA := func(ctx context.Context, tracks []playlist.Track, updates chan<- Update, epoch int) {
+	mockRunGA := func(_ context.Context, _ []playlist.Track, _ chan<- Update, _ int) {
 		// Don't send any updates in tests
 	}
 
-	mockLoadPlaylist := func(path string, requireMultiple bool) ([]playlist.Track, error) {
+	mockLoadPlaylist := func(_ string, _ bool) ([]playlist.Track, error) {
 		return tracks, nil
 	}
 
-	mockWritePlaylist := func(path string, tracks []playlist.Track) error {
+	mockWritePlaylist := func(_ string, _ []playlist.Track) error {
 		return nil
 	}
 
-	mockDebugf := func(format string, args ...interface{}) {
+	mockDebugf := func(_ string, _ ...interface{}) {
 		// Silent in tests
 	}
 
