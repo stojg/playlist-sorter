@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"playlist-sorter/playlist"
+
+	"golang.org/x/term"
 )
 
 const (
@@ -126,12 +128,18 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, config *Shared
 	// Track progress with pretty printing
 	previousBestFitness := math.MaxFloat64
 
+	// Detect if stdout is a TTY - no spinner needed in non-interactive contexts (cron, pipes, etc.)
+	isTTY := term.IsTerminal(int(os.Stdout.Fd()))
+
 	// Status line animation and ticker
 	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	spinnerIdx := 0
 
-	statusTicker := time.NewTicker(spinnerUpdateInterval)
-	defer statusTicker.Stop()
+	var statusTicker *time.Ticker
+	if isTTY {
+		statusTicker = time.NewTicker(spinnerUpdateInterval)
+		defer statusTicker.Stop()
+	}
 
 	// Helper to format elapsed time (right-padded to 6 chars for max "59m59s")
 	formatElapsed := func(d time.Duration) string {
@@ -145,8 +153,12 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, config *Shared
 		return fmt.Sprintf("%6s", s) // Right-align to 6 characters
 	}
 
-	// Helper to print status line (overwrites itself)
+	// Helper to print status line (overwrites itself in TTY, appends in non-TTY)
 	printStatus := func(gen int) {
+		if !isTTY {
+			// Non-TTY: skip spinner updates entirely to avoid log spam
+			return
+		}
 		elapsed := time.Since(startTime)
 		fmt.Printf("\r%s Gen %d %s     ", formatElapsed(elapsed), gen, spinnerFrames[spinnerIdx])
 		spinnerIdx = (spinnerIdx + 1) % len(spinnerFrames)
@@ -187,10 +199,14 @@ loop:
 			fitnessImproved := hasFitnessImproved(update.BestFitness, previousBestFitness, fitnessImprovementEpsilon)
 
 			if fitnessImproved {
-				// Clear status line before printing progress
-				fmt.Print("\r\033[K")
 				elapsed := time.Since(startTime)
 				elapsedStr := formatElapsed(elapsed)
+
+				if isTTY {
+					// Clear status line before printing progress (TTY only)
+					fmt.Print("\r\033[K")
+				}
+
 				fmt.Printf("%s Gen %d - fitness: %.10f\n", elapsedStr, currentGen, update.BestFitness)
 				previousBestFitness = update.BestFitness
 
@@ -200,7 +216,13 @@ loop:
 				}
 			}
 
-		case <-statusTicker.C:
+		case <-func() <-chan time.Time {
+			if statusTicker != nil {
+				return statusTicker.C
+			}
+			// Non-TTY: return never-firing channel
+			return make(<-chan time.Time)
+		}():
 			printStatus(currentGen)
 
 		case result := <-done:
@@ -210,8 +232,10 @@ loop:
 		}
 	}
 
-	// Clear status line at end
-	fmt.Print("\r\033[K")
+	// Clear status line at end (TTY only)
+	if isTTY {
+		fmt.Print("\r\033[K")
+	}
 
 	fmt.Printf("\nCompleted %d generations in %v\n", currentGen, time.Since(startTime).Round(time.Millisecond))
 
