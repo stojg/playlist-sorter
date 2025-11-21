@@ -397,54 +397,9 @@ type Options struct {
 
 // ========== Parameter Manager ==========
 
-// ParamManager manages GA parameter adjustments
-type ParamManager struct {
-	params        []Parameter
-	selectedIndex int
-}
-
-// NewParamManager creates a new parameter manager
-func NewParamManager(params []Parameter) *ParamManager {
-	return &ParamManager{
-		params:        params,
-		selectedIndex: 0,
-	}
-}
-
-// Selected returns the index of the currently selected parameter
-func (pm *ParamManager) Selected() int {
-	return pm.selectedIndex
-}
-
-// SetSelected sets the selected parameter index
-func (pm *ParamManager) SetSelected(index int) {
-	if index >= 0 && index < len(pm.params) {
-		pm.selectedIndex = index
-	}
-}
-
-// SelectNext moves selection to the next parameter
-func (pm *ParamManager) SelectNext() {
-	if pm.selectedIndex < len(pm.params)-1 {
-		pm.selectedIndex++
-	}
-}
-
-// SelectPrevious moves selection to the previous parameter
-func (pm *ParamManager) SelectPrevious() {
-	if pm.selectedIndex > 0 {
-		pm.selectedIndex--
-	}
-}
-
-// Increase increases the selected parameter value
+// increaseParam increases a parameter value with bounds checking
 // Returns true if the value was changed
-func (pm *ParamManager) Increase() bool {
-	if pm.selectedIndex >= len(pm.params) {
-		return false
-	}
-
-	param := &pm.params[pm.selectedIndex]
+func increaseParam(param *Parameter) bool {
 	if param.IsInt {
 		newVal := *param.IntValue + int(param.Step)
 		if float64(newVal) <= param.Max {
@@ -458,18 +413,12 @@ func (pm *ParamManager) Increase() bool {
 			return true
 		}
 	}
-
 	return false
 }
 
-// Decrease decreases the selected parameter value
+// decreaseParam decreases a parameter value with bounds checking
 // Returns true if the value was changed
-func (pm *ParamManager) Decrease() bool {
-	if pm.selectedIndex >= len(pm.params) {
-		return false
-	}
-
-	param := &pm.params[pm.selectedIndex]
+func decreaseParam(param *Parameter) bool {
 	if param.IsInt {
 		newVal := *param.IntValue - int(param.Step)
 		if float64(newVal) >= param.Min {
@@ -488,15 +437,14 @@ func (pm *ParamManager) Decrease() bool {
 			return true
 		}
 	}
-
 	return false
 }
 
-// ResetToDefaults resets all parameters to their default values.
-// Uses name-based lookup to avoid fragile array indexing.
-func (pm *ParamManager) ResetToDefaults(defaults config.GAConfig) {
-	for i := range pm.params {
-		p := &pm.params[i]
+// resetParamsToDefaults resets all parameters to their default values
+// Uses name-based lookup to avoid fragile array indexing
+func resetParamsToDefaults(params []Parameter, defaults config.GAConfig) {
+	for i := range params {
+		p := &params[i]
 		switch p.Name {
 		case "Harmonic Weight":
 			*p.Value = defaults.HarmonicWeight
@@ -516,29 +464,6 @@ func (pm *ParamManager) ResetToDefaults(defaults config.GAConfig) {
 			*p.Value = defaults.LowEnergyBiasWeight
 		}
 	}
-}
-
-// Get returns the parameter at the given index
-func (pm *ParamManager) Get(index int) *Parameter {
-	if index >= 0 && index < len(pm.params) {
-		return &pm.params[index]
-	}
-	return nil
-}
-
-// GetSelected returns the currently selected parameter
-func (pm *ParamManager) GetSelected() *Parameter {
-	return pm.Get(pm.selectedIndex)
-}
-
-// Len returns the number of parameters
-func (pm *ParamManager) Len() int {
-	return len(pm.params)
-}
-
-// All returns all parameters (for rendering)
-func (pm *ParamManager) All() []Parameter {
-	return pm.params
 }
 
 // ========== Undo Manager ==========
