@@ -257,7 +257,7 @@ func Run(opts Options, sharedConfig *config.SharedConfig, runGA func(context.Con
 		if m.dryRun {
 			fmt.Println("\n--dry-run mode: playlist not modified")
 		} else {
-			if err := deps.WritePlaylist(m.outputPath, m.bestPlaylist); err != nil {
+			if err := writePlaylist(m.outputPath, m.bestPlaylist); err != nil {
 				return fmt.Errorf("failed to save playlist: %w", err)
 			}
 
@@ -364,17 +364,6 @@ func truncate(s string, maxLen int) string {
 }
 
 // ========== Types and Dependencies ==========
-
-// Dependencies holds the concrete dependencies needed by the TUI.
-// Following Go philosophy: accept concrete types, not interfaces.
-type Dependencies struct {
-	SharedConfig  *config.SharedConfig
-	RunGA         func(ctx context.Context, tracks []playlist.Track, updates chan<- Update, epoch int)
-	LoadPlaylist  func(path string, requireMultiple bool) ([]playlist.Track, error)
-	WritePlaylist func(path string, tracks []playlist.Track) error
-	Debugf        func(format string, args ...interface{})
-	ConfigPath    string
-}
 
 // Update represents a progress update from the GA
 type Update struct {

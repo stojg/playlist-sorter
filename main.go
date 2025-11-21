@@ -79,22 +79,16 @@ func run() int {
 		cfg, _ := config.LoadConfig(configPath)
 		sharedCfg.Update(cfg)
 
-		// Create dependencies with concrete implementations (Go philosophy: no adapters!)
-		deps := tui.Dependencies{
-			SharedConfig: sharedCfg,
-			RunGA: func(ctx context.Context, tracks []playlist.Track, updates chan<- tui.Update, epoch int) {
-				runGAForTUI(ctx, tracks, sharedCfg, updates, epoch)
-			},
-			LoadPlaylist: func(path string, requireMultiple bool) ([]playlist.Track, error) {
-				allowSingle := !requireMultiple
-				return LoadPlaylistForMode(PlaylistOptions{Path: path, Verbose: false}, allowSingle)
-			},
-			WritePlaylist: playlist.WritePlaylist,
-			Debugf:        debugf,
-			ConfigPath:    configPath,
+		// Pass dependencies directly (Go philosophy: no unnecessary wrappers!)
+		runGA := func(ctx context.Context, tracks []playlist.Track, updates chan<- tui.Update, epoch int) {
+			runGAForTUI(ctx, tracks, sharedCfg, updates, epoch)
+		}
+		loadPlaylist := func(path string, requireMultiple bool) ([]playlist.Track, error) {
+			allowSingle := !requireMultiple
+			return LoadPlaylistForMode(PlaylistOptions{Path: path, Verbose: false}, allowSingle)
 		}
 
-		if err := tui.Run(opts, deps); err != nil {
+		if err := tui.Run(opts, sharedCfg, runGA, loadPlaylist, playlist.WritePlaylist, debugf, configPath); err != nil {
 			log.Printf("TUI error: %v", err)
 
 			return 1

@@ -39,16 +39,7 @@ func createTestModel(tracks []playlist.Track) model {
 		// Silent in tests
 	}
 
-	deps := Dependencies{
-		SharedConfig:  sharedCfg,
-		RunGA:         mockRunGA,
-		LoadPlaylist:  mockLoadPlaylist,
-		WritePlaylist: mockWritePlaylist,
-		Debugf:        mockDebugf,
-		ConfigPath:    "/tmp/test_config.toml",
-	}
-
-	return initModel(tracks, opts, deps)
+	return initModel(tracks, opts, sharedCfg, mockRunGA, mockLoadPlaylist, mockWritePlaylist, mockDebugf, "/tmp/test_config.toml")
 }
 
 // createTestTracks creates sample tracks for testing
