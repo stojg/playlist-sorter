@@ -67,7 +67,7 @@ Artist/Album/02 Track.mp3
 			tmpDir := t.TempDir()
 			tmpFile := filepath.Join(tmpDir, "test.m3u8")
 
-			if err := os.WriteFile(tmpFile, []byte(tt.content), 0600); err != nil {
+			if err := os.WriteFile(tmpFile, []byte(tt.content), 0o600); err != nil {
 				t.Fatalf("Failed to create test file: %v", err)
 			}
 

@@ -1,7 +1,7 @@
 # ABOUTME: Simple build shortcuts for PGO optimization
 # ABOUTME: Wraps go commands with project-specific flags
 
-.PHONY: dev prod test clean
+.PHONY: dev prod test clean fmt lint vuln check
 
 dev:
 	go build -race -o playlist-sorter-dev
@@ -20,3 +20,15 @@ test:
 
 clean:
 	rm -f playlist-sorter playlist-sorter-dev playlist-sorter-pgo default.pgo *.prof
+
+fmt:
+	go tool gofumpt -l -w .
+	go tool goimports -w .
+
+lint:
+	go tool golangci-lint run
+
+vuln:
+	go tool govulncheck ./...
+
+check: fmt lint vuln
