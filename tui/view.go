@@ -74,7 +74,7 @@ func (m model) renderParameters() string {
 	}
 	s += titleStyle.Render(title) + "\n\n"
 
-	for i, param := range m.paramMgr.All() {
+	for i, param := range m.params {
 		var value string
 		if param.IsInt && param.IntValue != nil {
 			value = strconv.Itoa(*param.IntValue)
@@ -86,13 +86,13 @@ func (m model) renderParameters() string {
 
 		// Fixed width formatting to prevent column misalignment
 		prefix := "  "
-		if i == m.paramMgr.Selected() {
+		if i == m.selectedParam {
 			prefix = "► "
 		}
 
 		line := fmt.Sprintf("%s%-25s %6s", prefix, param.Name, value)
 
-		if i == m.paramMgr.Selected() {
+		if i == m.selectedParam {
 			s += selectedParamStyle.Render(line) + "\n"
 		} else {
 			s += paramStyle.Render(line) + "\n"

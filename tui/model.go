@@ -74,9 +74,10 @@ type model struct {
 	debugf        func(string, ...interface{})
 
 	// Configuration
-	localConfig *config.GAConfig // Local config that params point to (pointer so addresses stay valid)
-	paramMgr    *ParamManager    // Parameter manager
-	configPath  string           // Config file path
+	localConfig   *config.GAConfig // Local config that params point to (pointer so addresses stay valid)
+	params        []Parameter      // GA parameters for tuning
+	selectedParam int              // Currently selected parameter index
+	configPath    string           // Config file path
 
 	// GA state
 	bestPlaylist         []playlist.Track   // Best playlist from GA
@@ -233,15 +234,15 @@ var (
 )
 
 // Run starts the TUI mode with injected dependencies
-func Run(opts Options, deps Dependencies) error {
+func Run(opts Options, sharedConfig *config.SharedConfig, runGA func(context.Context, []playlist.Track, chan<- Update, int), loadPlaylist func(string, bool) ([]playlist.Track, error), writePlaylist func(string, []playlist.Track) error, debugf func(string, ...interface{}), configPath string) error {
 	// Load and validate playlist
-	tracks, err := deps.LoadPlaylist(opts.PlaylistPath, true)
+	tracks, err := loadPlaylist(opts.PlaylistPath, true)
 	if err != nil {
 		return err
 	}
 
 	// Create model with injected dependencies
-	m := initModel(tracks, opts, deps)
+	m := initModel(tracks, opts, sharedConfig, runGA, loadPlaylist, writePlaylist, debugf, configPath)
 
 	// Run program
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -268,9 +269,9 @@ func Run(opts Options, deps Dependencies) error {
 }
 
 // initModel creates the initial model with injected dependencies
-func initModel(tracks []playlist.Track, opts Options, deps Dependencies) model {
+func initModel(tracks []playlist.Track, opts Options, sharedConfig *config.SharedConfig, runGA func(context.Context, []playlist.Track, chan<- Update, int), loadPlaylist func(string, bool) ([]playlist.Track, error), writePlaylist func(string, []playlist.Track) error, debugf func(string, ...interface{}), configPath string) model {
 	// Get config from provider
-	cfg := deps.SharedConfig.Get()
+	cfg := sharedConfig.Get()
 
 	// Allocate localConfig on heap so pointers remain valid
 	localConfig := &cfg
@@ -286,15 +287,15 @@ func initModel(tracks []playlist.Track, opts Options, deps Dependencies) model {
 
 	m := model{
 		// Injected dependencies (concrete types)
-		sharedConfig:  deps.SharedConfig,
-		runGA:         deps.RunGA,
-		loadPlaylist:  deps.LoadPlaylist,
-		writePlaylist: deps.WritePlaylist,
-		debugf:        deps.Debugf,
+		sharedConfig:  sharedConfig,
+		runGA:         runGA,
+		loadPlaylist:  loadPlaylist,
+		writePlaylist: writePlaylist,
+		debugf:        debugf,
 
 		// Configuration
 		localConfig: localConfig,
-		configPath:  deps.ConfigPath,
+		configPath:  configPath,
 
 		// GA state
 		bestPlaylist:        tracks, // Start with original order
@@ -330,7 +331,7 @@ func initModel(tracks []playlist.Track, opts Options, deps Dependencies) model {
 
 	// Build parameter list with pointers to localConfig fields
 	// All fitness weights now use [0,1] range due to component normalization
-	params := []Parameter{
+	m.params = []Parameter{
 		{"Harmonic Weight", &localConfig.HarmonicWeight, nil, 0, 1, 0.01, false},
 		{"Energy Delta Weight", &localConfig.EnergyDeltaWeight, nil, 0, 1, 0.01, false},
 		{"BPM Delta Weight", &localConfig.BPMDeltaWeight, nil, 0, 1, 0.01, false},
@@ -340,7 +341,7 @@ func initModel(tracks []playlist.Track, opts Options, deps Dependencies) model {
 		{"Low Energy Bias Portion", &localConfig.LowEnergyBiasPortion, nil, 0, 1, 0.01, false},
 		{"Low Energy Bias Weight", &localConfig.LowEnergyBiasWeight, nil, 0, 1, 0.01, false},
 	}
-	m.paramMgr = NewParamManager(params)
+	m.selectedParam = 0
 
 	return m
 }
@@ -714,17 +715,17 @@ func waitForUpdate(updateChan <-chan Update) tea.Cmd {
 	}
 }
 
-// increaseParam increases the selected parameter value and restarts GA
-func (m *model) increaseParam() tea.Cmd {
-	if m.paramMgr.Increase() {
+// increaseSelectedParam increases the selected parameter value and restarts GA
+func (m *model) increaseSelectedParam() tea.Cmd {
+	if m.selectedParam < len(m.params) && increaseParam(&m.params[m.selectedParam]) {
 		return m.syncConfigToGA()
 	}
 	return nil
 }
 
-// decreaseParam decreases the selected parameter value and restarts GA
-func (m *model) decreaseParam() tea.Cmd {
-	if m.paramMgr.Decrease() {
+// decreaseSelectedParam decreases the selected parameter value and restarts GA
+func (m *model) decreaseSelectedParam() tea.Cmd {
+	if m.selectedParam < len(m.params) && decreaseParam(&m.params[m.selectedParam]) {
 		return m.syncConfigToGA()
 	}
 	return nil
@@ -733,7 +734,7 @@ func (m *model) decreaseParam() tea.Cmd {
 // resetToDefaults resets all parameters to their default values and restarts GA
 func (m *model) resetToDefaults() tea.Cmd {
 	defaults := config.DefaultConfig()
-	m.paramMgr.ResetToDefaults(defaults)
+	resetParamsToDefaults(m.params, defaults)
 	return m.syncConfigToGA()
 }
 
@@ -742,8 +743,8 @@ func (m *model) resetToDefaults() tea.Cmd {
 func (m *model) syncConfigToGA() tea.Cmd {
 	// Parameters already modified m.localConfig directly via pointers
 	// Just copy the entire struct to shared config (thread-safe)
-	selected := m.paramMgr.GetSelected()
-	if selected != nil {
+	if m.selectedParam < len(m.params) {
+		selected := &m.params[m.selectedParam]
 		var value float64
 		if selected.IsInt {
 			value = float64(*selected.IntValue)

@@ -81,12 +81,12 @@ func TestModelInitialization(t *testing.T) {
 		t.Errorf("Expected 5 original tracks, got %d", len(m.originalTracks))
 	}
 
-	if m.paramMgr.Len() != 8 {
-		t.Errorf("Expected 8 parameters, got %d", m.paramMgr.Len())
+	if len(m.params) != 8 {
+		t.Errorf("Expected 8 parameters, got %d", len(m.params))
 	}
 
-	if m.paramMgr.Selected() != 0 {
-		t.Errorf("Expected selectedParam to be 0, got %d", m.paramMgr.Selected())
+	if m.selectedParam != 0 {
+		t.Errorf("Expected selectedParam to be 0, got %d", m.selectedParam)
 	}
 
 	if m.focusedPanel != "playlist" {
@@ -211,12 +211,12 @@ func TestParameterAdjustment(t *testing.T) {
 	m := createTestModel(tracks)
 
 	// Select harmonic weight parameter (index 0)
-	m.paramMgr.SetSelected(0)
-	originalValue := *m.paramMgr.Get(0).Value
+	m.selectedParam = 0
+	originalValue := *m.params[0].Value
 
 	// Increase parameter
-	_ = m.increaseParam()
-	newValue := *m.paramMgr.Get(0).Value
+	_ = m.increaseSelectedParam()
+	newValue := *m.params[0].Value
 
 	if newValue <= originalValue {
 		t.Errorf("Expected parameter to increase from %.2f, got %.2f", originalValue, newValue)
@@ -233,11 +233,11 @@ func TestParameterBoundaries(t *testing.T) {
 	m := createTestModel(tracks)
 
 	// Test max boundary - select first parameter and increase beyond max
-	m.paramMgr.SetSelected(0)
-	param := m.paramMgr.Get(0)
+	m.selectedParam = 0
+	param := &m.params[0]
 	*param.Value = param.Max
 
-	_ = m.increaseParam()
+	_ = m.increaseSelectedParam()
 
 	if *param.Value > param.Max {
 		t.Errorf("Parameter exceeded max: %.2f > %.2f", *param.Value, param.Max)
@@ -246,7 +246,7 @@ func TestParameterBoundaries(t *testing.T) {
 	// Test min boundary
 	*param.Value = param.Min
 
-	_ = m.decreaseParam()
+	_ = m.decreaseSelectedParam()
 
 	if *param.Value < param.Min {
 		t.Errorf("Parameter went below min: %.2f < %.2f", *param.Value, param.Min)
@@ -258,18 +258,18 @@ func TestResetToDefaults(t *testing.T) {
 	m := createTestModel(tracks)
 
 	// Modify some parameters
-	*m.paramMgr.Get(0).Value = 0.5
-	*m.paramMgr.Get(1).Value = 0.7
+	*m.params[0].Value = 0.5
+	*m.params[1].Value = 0.7
 
 	// Reset to defaults
 	_ = m.resetToDefaults()
 
 	defaults := config.DefaultConfig()
-	if *m.paramMgr.Get(0).Value != defaults.HarmonicWeight {
-		t.Errorf("Parameter 0 not reset to default: got %.2f, want %.2f", *m.paramMgr.Get(0).Value, defaults.HarmonicWeight)
+	if *m.params[0].Value != defaults.HarmonicWeight {
+		t.Errorf("Parameter 0 not reset to default: got %.2f, want %.2f", *m.params[0].Value, defaults.HarmonicWeight)
 	}
 
-	if *m.paramMgr.Get(1).Value != defaults.EnergyDeltaWeight {
-		t.Errorf("Parameter 1 not reset to default: got %.2f, want %.2f", *m.paramMgr.Get(1).Value, defaults.EnergyDeltaWeight)
+	if *m.params[1].Value != defaults.EnergyDeltaWeight {
+		t.Errorf("Parameter 1 not reset to default: got %.2f, want %.2f", *m.params[1].Value, defaults.EnergyDeltaWeight)
 	}
 }

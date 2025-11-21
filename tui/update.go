@@ -218,9 +218,13 @@ func (m *model) handleTabKey() {
 // handleParamSelectKey handles Shift+Up/Down for parameter selection
 func (m *model) handleParamSelectKey(isUp bool) {
 	if isUp {
-		m.paramMgr.SelectPrevious()
+		if m.selectedParam > 0 {
+			m.selectedParam--
+		}
 	} else {
-		m.paramMgr.SelectNext()
+		if m.selectedParam < len(m.params)-1 {
+			m.selectedParam++
+		}
 	}
 }
 
@@ -228,7 +232,9 @@ func (m *model) handleParamSelectKey(isUp bool) {
 func (m *model) handleUpKey() {
 	if m.focusedPanel == panelParams {
 		// Select previous parameter
-		m.paramMgr.SelectPrevious()
+		if m.selectedParam > 0 {
+			m.selectedParam--
+		}
 	} else {
 		// Navigate tracks up
 		if m.cursorPos > 0 {
@@ -243,7 +249,9 @@ func (m *model) handleUpKey() {
 func (m *model) handleDownKey() {
 	if m.focusedPanel == panelParams {
 		// Select next parameter
-		m.paramMgr.SelectNext()
+		if m.selectedParam < len(m.params)-1 {
+			m.selectedParam++
+		}
 	} else {
 		// Navigate tracks down
 		if m.cursorPos < len(m.displayedTracks)-1 {
@@ -293,7 +301,7 @@ func (m *model) handleEndKey() {
 // handleLeftKey handles Left/h key press (decrease parameter when params focused)
 func (m *model) handleLeftKey() tea.Cmd {
 	if m.focusedPanel == panelParams {
-		return m.decreaseParam()
+		return m.decreaseSelectedParam()
 	}
 	return nil
 }
@@ -301,7 +309,7 @@ func (m *model) handleLeftKey() tea.Cmd {
 // handleRightKey handles Right/l key press (increase parameter when params focused)
 func (m *model) handleRightKey() tea.Cmd {
 	if m.focusedPanel == panelParams {
-		return m.increaseParam()
+		return m.increaseSelectedParam()
 	}
 	return nil
 }
