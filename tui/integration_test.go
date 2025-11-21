@@ -11,46 +11,17 @@ import (
 	"playlist-sorter/playlist"
 )
 
-// mockConfigProvider implements ConfigProvider for testing
-type mockConfigProvider struct {
+// mockSharedConfig implements SharedConfig for testing
+type mockSharedConfig struct {
 	cfg config.GAConfig
 }
 
-func (m *mockConfigProvider) Get() config.GAConfig {
+func (m *mockSharedConfig) Get() config.GAConfig {
 	return m.cfg
 }
 
-func (m *mockConfigProvider) Update(cfg config.GAConfig) {
+func (m *mockSharedConfig) Update(cfg config.GAConfig) {
 	m.cfg = cfg
-}
-
-// mockGARunner implements GARunner for testing
-type mockGARunner struct {
-	runCalled bool
-}
-
-func (m *mockGARunner) Run(ctx context.Context, tracks []playlist.Track, cfg ConfigProvider, updates chan<- Update, epoch int) {
-	m.runCalled = true
-	// Don't send any updates in tests
-}
-
-// mockPlaylistWriter implements PlaylistWriter for testing
-type mockPlaylistWriter struct {
-	lastPath   string
-	lastTracks []playlist.Track
-}
-
-func (m *mockPlaylistWriter) Write(path string, tracks []playlist.Track) error {
-	m.lastPath = path
-	m.lastTracks = tracks
-	return nil
-}
-
-// mockLogger implements Logger for testing
-type mockLogger struct{}
-
-func (m *mockLogger) Debugf(format string, args ...interface{}) {
-	// Silent in tests
 }
 
 // createTestModel creates a model with mock dependencies for testing
@@ -61,12 +32,32 @@ func createTestModel(tracks []playlist.Track) model {
 		DryRun:       false,
 	}
 
+	sharedCfg := &mockSharedConfig{cfg: config.DefaultConfig()}
+
+	// Mock functions for testing
+	mockRunGA := func(ctx context.Context, tracks []playlist.Track, updates chan<- Update, epoch int) {
+		// Don't send any updates in tests
+	}
+
+	mockLoadPlaylist := func(path string, requireMultiple bool) ([]playlist.Track, error) {
+		return tracks, nil
+	}
+
+	mockWritePlaylist := func(path string, tracks []playlist.Track) error {
+		return nil
+	}
+
+	mockDebugf := func(format string, args ...interface{}) {
+		// Silent in tests
+	}
+
 	deps := Dependencies{
-		ConfigProvider: &mockConfigProvider{cfg: config.DefaultConfig()},
-		GARunner:       &mockGARunner{},
-		PlaylistWriter: &mockPlaylistWriter{},
-		Logger:         &mockLogger{},
-		ConfigPath:     "/tmp/test_config.toml",
+		SharedConfig:  sharedCfg,
+		RunGA:         mockRunGA,
+		LoadPlaylist:  mockLoadPlaylist,
+		WritePlaylist: mockWritePlaylist,
+		Debugf:        mockDebugf,
+		ConfigPath:    "/tmp/test_config.toml",
 	}
 
 	return initModel(tracks, opts, deps)
@@ -94,8 +85,8 @@ func TestModelInitialization(t *testing.T) {
 	tracks := createTestTracks(5)
 	m := createTestModel(tracks)
 
-	if len(m.tracks) != 5 {
-		t.Errorf("Expected 5 tracks, got %d", len(m.tracks))
+	if len(m.displayedTracks) != 5 {
+		t.Errorf("Expected 5 tracks, got %d", len(m.displayedTracks))
 	}
 
 	if len(m.originalTracks) != 5 {
@@ -123,11 +114,11 @@ func TestDeleteTrack(t *testing.T) {
 	m.cursorPos = 2
 
 	// Delete track
-	originalLen := len(m.tracks)
+	originalLen := len(m.displayedTracks)
 	_ = m.deleteTrack()
 
-	if len(m.tracks) != originalLen-1 {
-		t.Errorf("Expected %d tracks after delete, got %d", originalLen-1, len(m.tracks))
+	if len(m.displayedTracks) != originalLen-1 {
+		t.Errorf("Expected %d tracks after delete, got %d", originalLen-1, len(m.displayedTracks))
 	}
 
 	if m.undoMgr.UndoSize() != 1 {
@@ -159,24 +150,24 @@ func TestUndo(t *testing.T) {
 
 	// Delete a track to create undo history
 	m.cursorPos = 2
-	originalTrack := m.tracks[2]
+	originalTrack := m.displayedTracks[2]
 	_ = m.deleteTrack()
 
 	// Verify deletion
-	if len(m.tracks) != 4 {
-		t.Fatalf("Expected 4 tracks after delete, got %d", len(m.tracks))
+	if len(m.displayedTracks) != 4 {
+		t.Fatalf("Expected 4 tracks after delete, got %d", len(m.displayedTracks))
 	}
 
 	// Undo the deletion
 	_ = m.undo()
 
 	// Verify restoration
-	if len(m.tracks) != 5 {
-		t.Errorf("Expected 5 tracks after undo, got %d", len(m.tracks))
+	if len(m.displayedTracks) != 5 {
+		t.Errorf("Expected 5 tracks after undo, got %d", len(m.displayedTracks))
 	}
 
-	if m.tracks[2].Title != originalTrack.Title {
-		t.Errorf("Expected track %s at position 2, got %s", originalTrack.Title, m.tracks[2].Title)
+	if m.displayedTracks[2].Title != originalTrack.Title {
+		t.Errorf("Expected track %s at position 2, got %s", originalTrack.Title, m.displayedTracks[2].Title)
 	}
 
 	if m.undoMgr.RedoSize() != 1 {
@@ -194,16 +185,16 @@ func TestRedo(t *testing.T) {
 	_ = m.undo()
 
 	// Verify we're back to 5 tracks
-	if len(m.tracks) != 5 {
-		t.Fatalf("Expected 5 tracks after undo, got %d", len(m.tracks))
+	if len(m.displayedTracks) != 5 {
+		t.Fatalf("Expected 5 tracks after undo, got %d", len(m.displayedTracks))
 	}
 
 	// Redo the deletion
 	_ = m.redo()
 
 	// Verify deletion is reapplied
-	if len(m.tracks) != 4 {
-		t.Errorf("Expected 4 tracks after redo, got %d", len(m.tracks))
+	if len(m.displayedTracks) != 4 {
+		t.Errorf("Expected 4 tracks after redo, got %d", len(m.displayedTracks))
 	}
 
 	if m.undoMgr.UndoSize() != 1 {

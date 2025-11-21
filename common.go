@@ -30,13 +30,6 @@ type PlaylistOptions struct {
 	Verbose bool
 }
 
-// PlaylistValidation specifies validation requirements for playlist loading
-type PlaylistValidation int
-
-const (
-	RequireMultipleTracks PlaylistValidation = iota // Reject single-track playlists (for optimization)
-	AllowSingleTrack                                // Accept single-track playlists (for viewing)
-)
 
 // OptimizationContext contains the loaded playlist and associated data
 type OptimizationContext struct {
@@ -48,8 +41,8 @@ type OptimizationContext struct {
 // InitializePlaylist performs full initialization: load playlist, load config, build edge cache
 // This is used by CLI and TUI modes that need full optimization setup
 func InitializePlaylist(opts PlaylistOptions) (*OptimizationContext, error) {
-	// Load and validate playlist
-	tracks, err := LoadPlaylistForMode(opts, RequireMultipleTracks)
+	// Load and validate playlist (require multiple tracks for optimization)
+	tracks, err := LoadPlaylistForMode(opts, false)
 	if err != nil {
 		return nil, err
 	}
@@ -72,9 +65,9 @@ func InitializePlaylist(opts PlaylistOptions) (*OptimizationContext, error) {
 	}, nil
 }
 
-// LoadPlaylistForMode loads a playlist with edge case validation and index assignment
-// Returns error if playlist is empty or has only one track (unless validation allows it)
-func LoadPlaylistForMode(opts PlaylistOptions, validation PlaylistValidation) ([]playlist.Track, error) {
+// LoadPlaylistForMode loads a playlist with edge case validation and index assignment.
+// If allowSingle is false, returns error for single-track playlists (optimization requires multiple tracks).
+func LoadPlaylistForMode(opts PlaylistOptions, allowSingle bool) ([]playlist.Track, error) {
 	// Load playlist
 	if opts.Verbose {
 		fmt.Printf("Reading playlist: %s\n", opts.Path)
@@ -90,7 +83,7 @@ func LoadPlaylistForMode(opts PlaylistOptions, validation PlaylistValidation) ([
 		return nil, errors.New("playlist is empty")
 	}
 
-	if len(tracks) == 1 && validation == RequireMultipleTracks {
+	if len(tracks) == 1 && !allowSingle {
 		return nil, errors.New("playlist has only one track, nothing to optimize")
 	}
 

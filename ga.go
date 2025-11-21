@@ -15,8 +15,61 @@ import (
 
 	"playlist-sorter/config"
 	"playlist-sorter/playlist"
-	"playlist-sorter/pool"
 )
+
+// workerPool manages a pool of worker goroutines for parallel task execution.
+// Provides submit-and-wait pattern optimized for batch processing in the genetic algorithm.
+type workerPool struct {
+	workers int
+	// taskChan ownership: pool owns it, callers write via submit(), close() closes it
+	// Workers read from it until closed, then exit gracefully
+	taskChan chan func()
+	workerWg sync.WaitGroup // tracks worker goroutines lifetime
+	taskWg   sync.WaitGroup // tracks submitted tasks completion
+}
+
+// newWorkerPool creates a worker pool sized to available CPUs.
+// The bufferSize determines the task channel capacity.
+func newWorkerPool(bufferSize int) *workerPool {
+	numWorkers := runtime.NumCPU()
+	pool := &workerPool{
+		workers:  numWorkers,
+		taskChan: make(chan func(), bufferSize),
+	}
+
+	// Start worker goroutines
+	for range numWorkers {
+		pool.workerWg.Add(1)
+
+		go func() {
+			defer pool.workerWg.Done()
+
+			for task := range pool.taskChan {
+				task()
+				pool.taskWg.Done() // Mark task as complete
+			}
+		}()
+	}
+
+	return pool
+}
+
+// submit adds a task to the pool. Blocks if the task channel is full.
+func (p *workerPool) submit(task func()) {
+	p.taskWg.Add(1)
+	p.taskChan <- task
+}
+
+// wait blocks until all submitted tasks have completed.
+func (p *workerPool) wait() {
+	p.taskWg.Wait()
+}
+
+// close shuts down the worker pool and waits for all workers to exit.
+func (p *workerPool) close() {
+	close(p.taskChan)
+	p.workerWg.Wait()
+}
 
 const (
 	maxDuration = 1 * time.Hour // Maximum optimization time
@@ -27,6 +80,13 @@ const (
 	immigrantSwapsDivisor = 10 // Divide genome length by this to get immigrant swap count
 	elitePercentage       = 0.03
 	tournamentSize        = 3
+
+	// Seed individual indices (heuristic starting solutions)
+	seedOriginalOrder = 0 // Keep original playlist order
+	seedEnergySorted  = 1 // Sort by energy level (ascending)
+	seedBPMSorted     = 2 // Sort by BPM (ascending)
+	seedKeySorted     = 3 // Sort by Camelot key
+	seedRandomStart   = 4 // Start index for random shuffles
 
 	// Mutation parameters
 	maxMutationRate  = 0.3
@@ -39,6 +99,9 @@ const (
 	twoOptStartGen       = 50    // Generation to start applying 2-opt
 	twoOptIntervalGens   = 100   // Apply 2-opt every N generations after start
 	floatingPointEpsilon = 1e-10 // Threshold for floating-point comparisons
+
+	// Music theory constants
+	camelotWheelPositions = 12 // Number of positions in the Camelot wheel (music theory)
 )
 
 // Individual represents a candidate solution in the genetic algorithm
@@ -53,18 +116,6 @@ func (ind Individual) Compare(other Individual) int {
 	return cmp.Compare(ind.Score, other.Score)
 }
 
-// FitnessBreakdown shows the individual components contributing to fitness
-type FitnessBreakdown struct {
-	Harmonic     float64 // Harmonic distance penalties
-	SameArtist   float64 // Same artist penalties
-	SameAlbum    float64 // Same album penalties
-	EnergyDelta  float64 // Energy change penalties
-	BPMDelta     float64 // BPM difference penalties
-	GenreChange  float64 // Genre change/clustering penalty (signed weight)
-	PositionBias float64 // Low energy position bias
-	Total        float64 // Sum of all components
-}
-
 // GAUpdate contains information about the current state of the genetic algorithm
 type GAUpdate struct {
 	Epoch        int // GA run epoch (increments on restart)
@@ -72,7 +123,7 @@ type GAUpdate struct {
 	BestFitness  float64
 	BestPlaylist []playlist.Track
 	GenPerSec    float64
-	Breakdown    FitnessBreakdown // Fitness breakdown
+	Breakdown    playlist.Breakdown // Fitness breakdown (shared type, no duplication)
 }
 
 // SharedConfig wraps GAConfig with a mutex for thread-safe access between GA and TUI
@@ -94,6 +145,26 @@ func (sc *SharedConfig) Update(cfg config.GAConfig) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
 	sc.config = cfg
+}
+
+// minBPMDistance finds the minimum BPM difference considering half/double time mixing.
+// DJs often mix tracks at 2:1 or 1:2 tempo ratios (e.g., 85 BPM mixes well with 170 BPM).
+func minBPMDistance(bpm1, bpm2 float64) float64 {
+	distances := []float64{
+		math.Abs(bpm1 - bpm2),      // 1:1 (same tempo)
+		math.Abs(bpm1*0.5 - bpm2),  // 1:2 (first track at half time)
+		math.Abs(bpm1 - bpm2*0.5),  // 2:1 (second track at half time)
+		math.Abs(bpm1*2.0 - bpm2),  // 2:1 (first track at double time)
+		math.Abs(bpm1 - bpm2*2.0),  // 1:2 (second track at double time)
+	}
+
+	min := distances[0]
+	for _, d := range distances[1:] {
+		if d < min {
+			min = d
+		}
+	}
+	return min
 }
 
 // EdgeData stores pre-calculated base values for track transitions (without weights applied)
@@ -165,8 +236,8 @@ func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *Sha
 	buildEdgeFitnessCache(tracks)
 
 	// create a worker pool for parallel fitness evaluation
-	workerPool := pool.NewWorkerPool(runtime.NumCPU())
-	defer workerPool.Close()
+	workerPool := newWorkerPool(runtime.NumCPU())
+	defer workerPool.close()
 
 	// scored population buffer (reused every generation to avoid allocations)
 	scoredPopulation := make([]Individual, populationSize)
@@ -185,20 +256,20 @@ func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *Sha
 	// pre-allocate and set up currentGen buffers
 	currentGen := make([][]playlist.Track, populationSize)
 
-	// Individual 0: Current order
-	currentGen[0] = slices.Clone(tracks)
-	// Individual 1: Sort by energy (ascending = smooth flow)
-	currentGen[1] = slices.Clone(tracks)
-	slices.SortFunc(currentGen[1], func(a, b playlist.Track) int { return a.Energy - b.Energy })
-	// Individual 2: Sort by BPM (ascending)
-	currentGen[2] = slices.Clone(tracks)
-	slices.SortFunc(currentGen[2], func(a, b playlist.Track) int { return cmp.Compare(a.BPM, b.BPM) })
-	// Individual 3: Sort by Camelot key (1A, 2A, ..., 12A, 1B, ..., 12B)
-	currentGen[3] = slices.Clone(tracks)
-	slices.SortFunc(currentGen[3], func(a, b playlist.Track) int { return a.ParsedKey.Compare(b.ParsedKey) })
+	// Seed with heuristic solutions for better convergence
+	currentGen[seedOriginalOrder] = slices.Clone(tracks)
 
-	// All the other individuals  are Random orderings
-	for i := 4; i < populationSize; i++ {
+	currentGen[seedEnergySorted] = slices.Clone(tracks)
+	slices.SortFunc(currentGen[seedEnergySorted], func(a, b playlist.Track) int { return a.Energy - b.Energy })
+
+	currentGen[seedBPMSorted] = slices.Clone(tracks)
+	slices.SortFunc(currentGen[seedBPMSorted], func(a, b playlist.Track) int { return cmp.Compare(a.BPM, b.BPM) })
+
+	currentGen[seedKeySorted] = slices.Clone(tracks)
+	slices.SortFunc(currentGen[seedKeySorted], func(a, b playlist.Track) int { return a.ParsedKey.Compare(b.ParsedKey) })
+
+	// Fill remaining population with random orderings for diversity
+	for i := seedRandomStart; i < populationSize; i++ {
 		currentGen[i] = slices.Clone(tracks)
 		rand.Shuffle(len(currentGen[i]), func(a, b int) { currentGen[i][a], currentGen[i][b] = currentGen[i][b], currentGen[i][a] })
 	}
@@ -230,11 +301,11 @@ loop:
 		// evaluate fitness for each individual playlist (parallelized with worker pool)
 		debugf("[GA] Starting fitness evaluation for gen %d", gen)
 		for i := range currentGen {
-			workerPool.Submit(func() {
+			workerPool.submit(func() {
 				scoredPopulation[i] = Individual{Genes: currentGen[i], Score: calculateFitness(currentGen[i], config)}
 			})
 		}
-		workerPool.Wait()
+		workerPool.wait()
 		debugf("[GA] Fitness evaluation complete for gen %d", gen)
 
 		// Sort population from lowest score (better fit) to highest (worse fit)
@@ -249,11 +320,11 @@ loop:
 			}
 			debugf("[GA] Starting 2-opt for gen %d (topCount=%d)", gen, topCount)
 			for i := range topCount {
-				workerPool.Submit(func() {
+				workerPool.submit(func() {
 					twoOptImprove(scoredPopulation[i].Genes, config)
 				})
 			}
-			workerPool.Wait()
+			workerPool.wait()
 			debugf("[GA] 2-opt complete for gen %d", gen)
 		}
 
@@ -413,28 +484,8 @@ func buildEdgeFitnessCache(tracks []playlist.Track) {
 
 				// BPM delta (base value, accounting for half/double time)
 				bpmDelta := 0.0
-
 				if t1.BPM > 0 && t2.BPM > 0 {
-					bpm1, bpm2 := t1.BPM, t2.BPM
-					minBPMDistance := math.Abs(bpm1 - bpm2)
-
-					if d := math.Abs(bpm1*0.5 - bpm2); d < minBPMDistance {
-						minBPMDistance = d
-					}
-
-					if d := math.Abs(bpm1 - bpm2*0.5); d < minBPMDistance {
-						minBPMDistance = d
-					}
-
-					if d := math.Abs(bpm1*2.0 - bpm2); d < minBPMDistance {
-						minBPMDistance = d
-					}
-
-					if d := math.Abs(bpm1 - bpm2*2.0); d < minBPMDistance {
-						minBPMDistance = d
-					}
-
-					bpmDelta = minBPMDistance
+					bpmDelta = minBPMDistance(t1.BPM, t2.BPM)
 				}
 
 				// Genre difference (hierarchical similarity: 0.0 = same, 1.0 = different)
@@ -454,7 +505,7 @@ func buildEdgeFitnessCache(tracks []playlist.Track) {
 
 		// Calculate normalization constants for 0-1 scaled fitness
 		// These represent maximum possible values for each component across the entire playlist
-		normalizers.MaxHarmonic = 12.0 * float64(n-1) // Max Camelot distance is 12
+		normalizers.MaxHarmonic = camelotWheelPositions * float64(n-1)
 
 		normalizers.MaxSameArtist = float64(n - 1) // Worst case: all transitions have same artist
 		normalizers.MaxSameAlbum = float64(n - 1)  // Worst case: all transitions have same album
@@ -509,7 +560,7 @@ func calculateFitness(individual []playlist.Track, config config.GAConfig) float
 }
 
 // calculateFitnessWithBreakdown computes fitness and returns detailed breakdown
-func calculateFitnessWithBreakdown(individual []playlist.Track, config config.GAConfig) FitnessBreakdown {
+func calculateFitnessWithBreakdown(individual []playlist.Track, config config.GAConfig) playlist.Breakdown {
 	return segmentFitnessWithBreakdown(individual, 0, len(individual)-1, config)
 }
 
@@ -675,8 +726,8 @@ func segmentFitness(tracks []playlist.Track, start, end int, config config.GACon
 }
 
 // segmentFitnessWithBreakdown calculates fitness and returns breakdown of components
-func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config config.GAConfig) FitnessBreakdown {
-	var breakdown FitnessBreakdown
+func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config config.GAConfig) playlist.Breakdown {
+	var breakdown playlist.Breakdown
 
 	biasThreshold := int(float64(len(tracks)) * config.LowEnergyBiasPortion)
 	// Precompute genre-related values to avoid repeated checks and calculations

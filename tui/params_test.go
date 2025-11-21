@@ -261,14 +261,14 @@ func TestParamManager_ResetToDefaults(t *testing.T) {
 	}
 
 	params := []Parameter{
-		{Name: "Harmonic", Value: &cfg.HarmonicWeight, Min: 0, Max: 1, Step: 0.05},
-		{Name: "Energy", Value: &cfg.EnergyDeltaWeight, Min: 0, Max: 1, Step: 0.05},
-		{Name: "BPM", Value: &cfg.BPMDeltaWeight, Min: 0, Max: 1, Step: 0.05},
-		{Name: "Genre", Value: &cfg.GenreWeight, Min: -1, Max: 1, Step: 0.1},
-		{Name: "Artist", Value: &cfg.SameArtistPenalty, Min: 0, Max: 1, Step: 0.05},
-		{Name: "Album", Value: &cfg.SameAlbumPenalty, Min: 0, Max: 1, Step: 0.05},
-		{Name: "BiasPortn", Value: &cfg.LowEnergyBiasPortion, Min: 0, Max: 1, Step: 0.05},
-		{Name: "BiasWght", Value: &cfg.LowEnergyBiasWeight, Min: 0, Max: 1, Step: 0.05},
+		{Name: "Harmonic Weight", Value: &cfg.HarmonicWeight, Min: 0, Max: 1, Step: 0.05},
+		{Name: "Energy Delta Weight", Value: &cfg.EnergyDeltaWeight, Min: 0, Max: 1, Step: 0.05},
+		{Name: "BPM Delta Weight", Value: &cfg.BPMDeltaWeight, Min: 0, Max: 1, Step: 0.05},
+		{Name: "Genre Weight", Value: &cfg.GenreWeight, Min: -1, Max: 1, Step: 0.1},
+		{Name: "Same Artist Penalty", Value: &cfg.SameArtistPenalty, Min: 0, Max: 1, Step: 0.05},
+		{Name: "Same Album Penalty", Value: &cfg.SameAlbumPenalty, Min: 0, Max: 1, Step: 0.05},
+		{Name: "Low Energy Bias Portion", Value: &cfg.LowEnergyBiasPortion, Min: 0, Max: 1, Step: 0.05},
+		{Name: "Low Energy Bias Weight", Value: &cfg.LowEnergyBiasWeight, Min: 0, Max: 1, Step: 0.05},
 	}
 
 	pm := NewParamManager(params)

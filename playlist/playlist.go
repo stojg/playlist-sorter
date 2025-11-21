@@ -1,6 +1,9 @@
 // ABOUTME: Handles reading and writing M3U8 playlist files
 // ABOUTME: Provides functions to load playlists with metadata and save sorted playlists back to disk
 
+// Package playlist handles M3U8 playlist files and music metadata.
+// It reads playlists, extracts metadata directly from audio file tags (ID3, Vorbis, etc.),
+// and provides harmonic mixing utilities based on the Camelot wheel system.
 package playlist
 
 import (

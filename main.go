@@ -1,14 +1,21 @@
+// ABOUTME: Entry point for playlist-sorter application
+// ABOUTME: Handles command-line parsing, profiling, and routing to CLI or TUI modes
+
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
+	"time"
 
 	"playlist-sorter/config"
+	"playlist-sorter/playlist"
 	"playlist-sorter/tui"
 )
 
@@ -67,19 +74,26 @@ func run() int {
 			DebugLog:     *debug,
 		}
 
-		// Create dependencies with adapters
-		deps := tui.Dependencies{
-			ConfigProvider: &configProviderAdapter{shared: &SharedConfig{}},
-			GARunner:       &gaRunnerAdapter{},
-			PlaylistLoader: &playlistLoaderAdapter{},
-			PlaylistWriter: &playlistWriterAdapter{},
-			Logger:         &loggerAdapter{},
-			ConfigPath:     config.GetConfigPath(),
-		}
+		// Create shared config and initialize with loaded config
+		sharedCfg := &SharedConfig{}
+		configPath := config.GetConfigPath()
+		cfg, _ := config.LoadConfig(configPath)
+		sharedCfg.Update(cfg)
 
-		// Initialize the config provider with loaded config
-		cfg, _ := config.LoadConfig(deps.ConfigPath)
-		deps.ConfigProvider.(*configProviderAdapter).shared.Update(cfg)
+		// Create dependencies with concrete implementations (Go philosophy: no adapters!)
+		deps := tui.Dependencies{
+			SharedConfig: sharedCfg,
+			RunGA: func(ctx context.Context, tracks []playlist.Track, updates chan<- tui.Update, epoch int) {
+				runGAForTUI(ctx, tracks, sharedCfg, updates, epoch)
+			},
+			LoadPlaylist: func(path string, requireMultiple bool) ([]playlist.Track, error) {
+				allowSingle := !requireMultiple
+				return LoadPlaylistForMode(PlaylistOptions{Path: path, Verbose: false}, allowSingle)
+			},
+			WritePlaylist: playlist.WritePlaylist,
+			Debugf:        debugf,
+			ConfigPath:    configPath,
+		}
 
 		if err := tui.Run(opts, deps); err != nil {
 			log.Printf("TUI error: %v", err)
@@ -146,4 +160,53 @@ func writeMemoryProfile(filename string) {
 	if err := pprof.WriteHeapProfile(f); err != nil {
 		log.Printf("could not write memory profile: %v", err)
 	}
+}
+
+// runGAForTUI runs the genetic algorithm and converts updates to TUI format.
+// This replaces the old gaRunnerAdapter without interface ceremony.
+func runGAForTUI(ctx context.Context, tracks []playlist.Track, sharedCfg *SharedConfig, updates chan<- tui.Update, epoch int) {
+	// Create converter channel for GA updates
+	// Buffer of 10 provides smoothing between GA update rate and converter processing:
+	// - GA sends updates every 50 generations OR on fitness improvement
+	// - Buffer prevents GA blocking during brief converter delays
+	// - select-default in progress.SendUpdate drops updates when full
+	gaUpdateChan := make(chan GAUpdate, 10)
+
+	// Start converter goroutine
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				debugf("[PANIC] Converter goroutine panic: %v\n%s", r, string(debug.Stack()))
+				panic(r)
+			}
+		}()
+
+		for update := range gaUpdateChan {
+			tuiUpdate := tui.Update{
+				BestPlaylist: update.BestPlaylist,
+				BestFitness:  update.BestFitness,
+				Breakdown:    update.Breakdown, // Same type now - no field copying needed!
+				Generation:   update.Generation,
+				GenPerSec:    update.GenPerSec,
+				Epoch:        update.Epoch,
+			}
+
+			select {
+			case updates <- tuiUpdate:
+			default:
+				// Channel full, skip update
+			}
+		}
+	}()
+
+	// Create tracker with the GA update channel
+	tracker := &Tracker{
+		updateChan:   gaUpdateChan,
+		sharedConfig: sharedCfg,
+		epoch:        epoch,
+		lastGenTime:  time.Now(),
+	}
+	defer tracker.Close()
+
+	geneticSort(ctx, tracks, sharedCfg, tracker)
 }

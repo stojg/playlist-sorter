@@ -27,6 +27,19 @@ type Track struct {
 	Index     int         // Index in original tracks slice (for fast cache lookups)
 }
 
+// Breakdown shows the individual fitness components for playlist optimization.
+// Single source of truth - used by both GA and TUI (no duplication).
+type Breakdown struct {
+	Total        float64 // Sum of all weighted components
+	Harmonic     float64 // Harmonic distance penalties
+	EnergyDelta  float64 // Energy change penalties
+	BPMDelta     float64 // BPM difference penalties
+	GenreChange  float64 // Genre change/clustering (can be negative for clustering)
+	SameArtist   float64 // Same artist penalties
+	SameAlbum    float64 // Same album penalties
+	PositionBias float64 // Low energy position bias reward
+}
+
 // Compile regexes once at package initialization
 var (
 	keyRegex    = regexp.MustCompile(`(\d+[AB])\s*-\s*Energy`)
@@ -47,10 +60,7 @@ func GetTrackMetadata(trackPath string) (*Track, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
-
-	defer func() {
-		_ = file.Close() // Explicitly ignore error for read-only file
-	}()
+	defer file.Close() // Error not checked - Close() errors on read-only files are rare and not actionable
 
 	// Read metadata tags
 	metadata, err := tag.ReadFrom(file)

@@ -89,13 +89,6 @@ func HarmonicDistanceParsed(k1, k2 *CamelotKey) int {
 	return harmonicIncompatible
 }
 
-// HarmonicDistance calculates the harmonic compatibility between two Camelot keys
-// Returns a score where:
-//
-//	0 = perfect match (same key)
-//	1 = excellent (±1 same letter OR relative major/minor)
-//	2 = dramatic mood shift (parallel major/minor, e.g., 8B ↔ 5A)
-//
 // String returns the string representation of a CamelotKey
 func (k *CamelotKey) String() string {
 	return fmt.Sprintf("%d%c", k.Number, k.Letter)

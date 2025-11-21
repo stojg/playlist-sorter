@@ -1,14 +1,68 @@
-// ABOUTME: Rendering functions for TUI components
-// ABOUTME: Handles all visual formatting and display logic
+// ABOUTME: Rendering and display functions for the TUI
+// ABOUTME: Implements the Bubble Tea View() function and all render helpers
 
 package tui
 
 import (
 	"fmt"
+	"runtime/debug"
 	"strconv"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
+// View renders the TUI
+func (m model) View() string {
+	defer func() {
+		if r := recover(); r != nil {
+			m.debugf("[PANIC] View panic: %v", r)
+			m.debugf("[PANIC] Stack trace: %s", string(debug.Stack()))
+			panic(r) // Re-panic so Bubble Tea can handle it
+		}
+	}()
+
+	if m.quitting {
+		return "Saving config and exiting...\n"
+	}
+
+	// Build the UI in two columns
+	leftPanel := m.renderParameters()
+	rightPanel := m.renderPlaylist()
+
+	// Create styles for the two panels with fixed widths
+	// Both panels should have same height for proper horizontal joining
+	// Leave room for status bar, breakdown, and help (4 lines total)
+	panelHeight := m.height - (statusBarHeight + breakdownHeight + helpHeight + 1)
+
+	leftPanelStyle := lipgloss.NewStyle().
+		Width(paramPanelWidth).
+		Height(panelHeight).
+		Padding(0, 1)
+
+	rightPanelWidth := m.width - paramPanelWidth - panelPadding
+	if rightPanelWidth < minViewportWidth*2 {
+		rightPanelWidth = minViewportWidth * 2 // Minimum width for readable track display
+	}
+
+	rightPanelStyle := lipgloss.NewStyle().
+		Width(rightPanelWidth).
+		Height(panelHeight).
+		Padding(0, 1)
+
+	// Combine panels horizontally
+	combined := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		leftPanelStyle.Render(leftPanel),
+		rightPanelStyle.Render(rightPanel),
+	)
+
+	// Add status bar at bottom
+	statusBar := m.renderStatus()
+	breakdown := m.renderBreakdown()
+
+	return combined + "\n" + statusBar + "\n" + breakdown + "\n" + m.renderHelp()
+}
 // renderParameters renders the parameter control panel
 func (m model) renderParameters() string {
 	var s string
@@ -77,7 +131,7 @@ func (m *model) updateViewportContent() {
 	var content string
 
 	// Render all tracks - viewport will handle scrolling via YOffset
-	for i, track := range m.tracks {
+	for i, track := range m.displayedTracks {
 		artist := truncate(track.Artist, 20)
 		title := truncate(track.Title, 30)
 		album := truncate(track.Album, 20)
@@ -107,8 +161,8 @@ func (m *model) updateViewportContent() {
 
 // renderStatus renders the status bar
 func (m model) renderStatus() string {
-	// Show status message if recent (within 5 seconds)
-	if m.statusMsg != "" && time.Since(m.statusMsgAge) < 5*time.Second {
+	// Show status message if recent
+	if m.statusMsg != "" && time.Since(m.statusMsgAge) < statusMessageDuration {
 		return statusStyle.Width(m.width).Render(m.statusMsg)
 	}
 
@@ -123,9 +177,9 @@ func (m model) renderStatus() string {
 
 	// Track info
 	trackInfo := fmt.Sprintf("%d tracks | Track %d/%d",
-		len(m.tracks),
+		len(m.displayedTracks),
 		m.cursorPos+1,
-		len(m.tracks),
+		len(m.displayedTracks),
 	)
 
 	// Undo/redo info
