@@ -172,7 +172,7 @@ func runGAForTUI(ctx context.Context, tracks []playlist.Track, sharedCfg *Shared
 	// - select-default in progress.SendUpdate drops updates when full
 	gaUpdateChan := make(chan GAUpdate, 10)
 
-	// Start converter goroutine
+	// Start converter goroutine with explicit context handling
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -181,20 +181,52 @@ func runGAForTUI(ctx context.Context, tracks []playlist.Track, sharedCfg *Shared
 			}
 		}()
 
-		for update := range gaUpdateChan {
-			tuiUpdate := tui.Update{
-				BestPlaylist: update.BestPlaylist,
-				BestFitness:  update.BestFitness,
-				Breakdown:    update.Breakdown, // Same type now - no field copying needed!
-				Generation:   update.Generation,
-				GenPerSec:    update.GenPerSec,
-				Epoch:        update.Epoch,
-			}
-
+		for {
 			select {
-			case updates <- tuiUpdate:
-			default:
-				// Channel full, skip update
+			case <-ctx.Done():
+				// Context cancelled (TUI exited) - drain remaining updates and exit
+				for {
+					select {
+					case update, ok := <-gaUpdateChan:
+						if !ok {
+							return
+						}
+						// Process final update
+						tuiUpdate := tui.Update{
+							BestPlaylist: update.BestPlaylist,
+							BestFitness:  update.BestFitness,
+							Breakdown:    update.Breakdown,
+							Generation:   update.Generation,
+							GenPerSec:    update.GenPerSec,
+							Epoch:        update.Epoch,
+						}
+						select {
+						case updates <- tuiUpdate:
+						default:
+						}
+					default:
+						return
+					}
+				}
+			case update, ok := <-gaUpdateChan:
+				if !ok {
+					return // Channel closed, exit cleanly
+				}
+
+				tuiUpdate := tui.Update{
+					BestPlaylist: update.BestPlaylist,
+					BestFitness:  update.BestFitness,
+					Breakdown:    update.Breakdown, // Same type now - no field copying needed!
+					Generation:   update.Generation,
+					GenPerSec:    update.GenPerSec,
+					Epoch:        update.Epoch,
+				}
+
+				select {
+				case updates <- tuiUpdate:
+				default:
+					// Channel full, skip update
+				}
 			}
 		}
 	}()
