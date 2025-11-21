@@ -21,20 +21,18 @@ import (
 )
 
 const (
-	spinnerUpdateInterval     = 500 * time.Millisecond // How often to update the spinner animation
-	fitnessImprovementEpsilon = 1e-10                  // Threshold for considering fitness improvements significant
+	spinnerUpdateInterval     = 500 * time.Millisecond
+	fitnessImprovementEpsilon = 1e-10
 )
 
 // RunCLI executes CLI mode optimization
 func RunCLI(opts RunOptions) error {
-	// Setup debug logging if requested
 	if opts.DebugLog {
 		if err := SetupDebugLog("playlist-sorter-debug.log"); err != nil {
 			return err
 		}
 	}
 
-	// Initialize playlist with full setup (config, cache, etc.)
 	data, err := InitializePlaylist(PlaylistOptions{
 		Path:    opts.PlaylistPath,
 		Verbose: true,
@@ -43,11 +41,9 @@ func RunCLI(opts RunOptions) error {
 		return err
 	}
 
-	// Set up context with cancellation for Ctrl+C
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Set up signal handling for Ctrl+C
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
@@ -56,7 +52,6 @@ func RunCLI(opts RunOptions) error {
 		cancel()
 	}()
 
-	// Calculate fitness bounds for context
 	theoreticalMin := calculateTheoreticalMinimum(data.Tracks, data.Config, data.GACtx)
 	initialFitness := calculateFitness(data.Tracks, data.Config, data.GACtx)
 
@@ -67,7 +62,6 @@ func RunCLI(opts RunOptions) error {
 
 	sortedTracks := cliGeneticSort(ctx, data.Tracks, data.SharedConfig, data.GACtx, opts.PlaylistPath)
 
-	// Show sorted playlist with tabwriter
 	fmt.Println("\nSorted playlist:")
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -98,7 +92,6 @@ func RunCLI(opts RunOptions) error {
 		log.Printf("Warning: failed to flush output: %v", err)
 	}
 
-	// Write sorted playlist (or just preview with --dry-run)
 	if opts.DryRun {
 		fmt.Println("\n--dry-run mode: playlist not modified")
 	} else {

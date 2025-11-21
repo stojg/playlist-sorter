@@ -23,7 +23,6 @@ func main() {
 }
 
 func run() int {
-	// Parse command-line flags
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 	memprofile := flag.String("memprofile", "", "write memory profile to file")
 	visual := flag.Bool("visual", false, "run in visual/interactive mode with live parameter tuning")
@@ -32,7 +31,6 @@ func run() int {
 	output := flag.String("output", "", "write sorted playlist to this file (default: overwrite input)")
 	flag.Parse()
 
-	// Validate arguments
 	args := flag.Args()
 	if len(args) != 1 {
 		fmt.Println("Usage: playlist-sorter [flags] <playlist.m3u8>")
@@ -45,7 +43,6 @@ func run() int {
 
 	playlistPath := args[0]
 
-	// Setup profiling (works for all modes)
 	if *cpuprofile != "" {
 		stopCPUProfile := setupCPUProfile(*cpuprofile)
 		defer stopCPUProfile()
@@ -55,9 +52,7 @@ func run() int {
 		defer writeMemoryProfile(*memprofile)
 	}
 
-	// Route to appropriate mode
 	if *visual {
-		// Setup debug logging if requested
 		if *debug {
 			if err := SetupDebugLog("playlist-sorter-debug.log"); err != nil {
 				log.Printf("Failed to setup debug log: %v", err)
@@ -65,7 +60,6 @@ func run() int {
 			}
 		}
 
-		// Create TUI options
 		opts := tui.Options{
 			PlaylistPath: playlistPath,
 			DryRun:       *dryRun,
@@ -73,13 +67,11 @@ func run() int {
 			DebugLog:     *debug,
 		}
 
-		// Create shared config and initialize with loaded config
 		sharedCfg := &config.SharedConfig{}
 		configPath := config.GetConfigPath()
 		cfg, _ := config.LoadConfig(configPath)
 		sharedCfg.Update(cfg)
 
-		// Pass dependencies directly (Go philosophy: no unnecessary wrappers!)
 		runGA := func(ctx context.Context, tracks []playlist.Track, updates chan<- tui.Update, epoch int) {
 			runGAForTUI(ctx, tracks, sharedCfg, updates, epoch)
 		}
@@ -97,7 +89,6 @@ func run() int {
 		return 0
 	}
 
-	// Default to CLI mode
 	if err := RunCLI(RunOptions{
 		PlaylistPath: playlistPath,
 		DryRun:       *dryRun,
@@ -112,7 +103,7 @@ func run() int {
 	return 0
 }
 
-// setupCPUProfile starts CPU profiling and returns a cleanup function
+// setupCPUProfile starts CPU profiling, returns cleanup function
 func setupCPUProfile(filename string) func() {
 	f, err := os.Create(filename)
 	if err != nil {
@@ -133,7 +124,7 @@ func setupCPUProfile(filename string) func() {
 	}
 }
 
-// writeMemoryProfile writes a memory profile to the specified file
+// writeMemoryProfile writes memory profile to file
 func writeMemoryProfile(filename string) {
 	f, err := os.Create(filename)
 	if err != nil {
@@ -148,24 +139,18 @@ func writeMemoryProfile(filename string) {
 		}
 	}()
 
-	runtime.GC() // Get up-to-date statistics
+	runtime.GC()
 
 	if err := pprof.WriteHeapProfile(f); err != nil {
 		log.Printf("could not write memory profile: %v", err)
 	}
 }
 
-// runGAForTUI runs the genetic algorithm and converts updates to TUI format.
-// This replaces the old gaRunnerAdapter without interface ceremony.
+// runGAForTUI runs GA and converts updates to TUI format
 func runGAForTUI(ctx context.Context, tracks []playlist.Track, sharedCfg *config.SharedConfig, updates chan<- tui.Update, epoch int) {
-	// Create converter channel for GA updates
-	// Buffer of 10 provides smoothing between GA update rate and converter processing:
-	// - GA sends updates every 50 generations OR on fitness improvement
-	// - Buffer prevents GA blocking during brief converter delays
-	// - select-default in progress.SendUpdate drops updates when full
+	// Buffer smooths GA update rate (updates sent every 50 gens or on improvement)
 	gaUpdateChan := make(chan GAUpdate, 10)
 
-	// Start converter goroutine with explicit context handling
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -177,14 +162,13 @@ func runGAForTUI(ctx context.Context, tracks []playlist.Track, sharedCfg *config
 		for {
 			select {
 			case <-ctx.Done():
-				// Context cancelled (TUI exited) - drain remaining updates and exit
+				// Drain remaining updates
 				for {
 					select {
 					case update, ok := <-gaUpdateChan:
 						if !ok {
 							return
 						}
-						// Process final update
 						tuiUpdate := tui.Update{
 							BestPlaylist: update.BestPlaylist,
 							BestFitness:  update.BestFitness,
@@ -203,13 +187,13 @@ func runGAForTUI(ctx context.Context, tracks []playlist.Track, sharedCfg *config
 				}
 			case update, ok := <-gaUpdateChan:
 				if !ok {
-					return // Channel closed, exit cleanly
+					return
 				}
 
 				tuiUpdate := tui.Update{
 					BestPlaylist: update.BestPlaylist,
 					BestFitness:  update.BestFitness,
-					Breakdown:    update.Breakdown, // Same type now - no field copying needed!
+					Breakdown:    update.Breakdown,
 					Generation:   update.Generation,
 					GenPerSec:    update.GenPerSec,
 					Epoch:        update.Epoch,
@@ -218,13 +202,11 @@ func runGAForTUI(ctx context.Context, tracks []playlist.Track, sharedCfg *config
 				select {
 				case updates <- tuiUpdate:
 				default:
-					// Channel full, skip update
 				}
 			}
 		}
 	}()
 
-	// Build edge fitness cache (required for fitness calculations)
 	gaCtx := buildEdgeFitnessCache(tracks)
 	defer close(gaUpdateChan)
 
