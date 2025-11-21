@@ -67,6 +67,7 @@ type FitnessBreakdown struct {
 
 // GAUpdate contains information about the current state of the genetic algorithm
 type GAUpdate struct {
+	Epoch        int // GA run epoch (increments on restart)
 	Generation   int
 	BestFitness  float64
 	BestPlaylist []playlist.Track

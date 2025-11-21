@@ -7,6 +7,9 @@ import (
 	"os"
 	"runtime"
 	"runtime/pprof"
+
+	"playlist-sorter/config"
+	"playlist-sorter/tui"
 )
 
 func main() {
@@ -17,7 +20,6 @@ func run() int {
 	// Parse command-line flags
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 	memprofile := flag.String("memprofile", "", "write memory profile to file")
-	view := flag.Bool("view", false, "view playlist with live updates (no optimization)")
 	visual := flag.Bool("visual", false, "run in visual/interactive mode with live parameter tuning")
 	debug := flag.Bool("debug", false, "enable debug logging to playlist-sorter-debug.log")
 	dryRun := flag.Bool("dry-run", false, "preview optimization without writing changes")
@@ -48,23 +50,38 @@ func run() int {
 	}
 
 	// Route to appropriate mode
-	if *view {
-		if err := RunViewMode(playlistPath); err != nil {
-			log.Printf("View mode error: %v", err)
-
-			return 1
+	if *visual {
+		// Setup debug logging if requested
+		if *debug {
+			if err := SetupDebugLog("playlist-sorter-debug.log"); err != nil {
+				log.Printf("Failed to setup debug log: %v", err)
+				return 1
+			}
 		}
 
-		return 0
-	}
-
-	if *visual {
-		if err := RunTUI(RunOptions{
+		// Create TUI options
+		opts := tui.Options{
 			PlaylistPath: playlistPath,
 			DryRun:       *dryRun,
 			OutputPath:   *output,
 			DebugLog:     *debug,
-		}); err != nil {
+		}
+
+		// Create dependencies with adapters
+		deps := tui.Dependencies{
+			ConfigProvider: &configProviderAdapter{shared: &SharedConfig{}},
+			GARunner:       &gaRunnerAdapter{},
+			PlaylistLoader: &playlistLoaderAdapter{},
+			PlaylistWriter: &playlistWriterAdapter{},
+			Logger:         &loggerAdapter{},
+			ConfigPath:     config.GetConfigPath(),
+		}
+
+		// Initialize the config provider with loaded config
+		cfg, _ := config.LoadConfig(deps.ConfigPath)
+		deps.ConfigProvider.(*configProviderAdapter).shared.Update(cfg)
+
+		if err := tui.Run(opts, deps); err != nil {
 			log.Printf("TUI error: %v", err)
 
 			return 1

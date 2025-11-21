@@ -19,6 +19,7 @@ const (
 type Tracker struct {
 	updateChan   chan<- GAUpdate
 	sharedConfig *SharedConfig
+	epoch        int // GA run epoch for detecting stale updates
 	lastGenTime  time.Time
 	lastGenCount int
 	closeOnce    sync.Once
@@ -46,6 +47,7 @@ func (pt *Tracker) SendUpdate(gen int, bestIndividual []playlist.Track, fitnessI
 
 	select {
 	case pt.updateChan <- GAUpdate{
+		Epoch:        pt.epoch,
 		Generation:   gen,
 		BestFitness:  breakdown.Total,
 		BestPlaylist: slices.Clone(bestIndividual),
