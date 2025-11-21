@@ -75,7 +75,7 @@ func run() int {
 		}
 
 		// Create shared config and initialize with loaded config
-		sharedCfg := &SharedConfig{}
+		sharedCfg := &config.SharedConfig{}
 		configPath := config.GetConfigPath()
 		cfg, _ := config.LoadConfig(configPath)
 		sharedCfg.Update(cfg)
@@ -164,7 +164,7 @@ func writeMemoryProfile(filename string) {
 
 // runGAForTUI runs the genetic algorithm and converts updates to TUI format.
 // This replaces the old gaRunnerAdapter without interface ceremony.
-func runGAForTUI(ctx context.Context, tracks []playlist.Track, sharedCfg *SharedConfig, updates chan<- tui.Update, epoch int) {
+func runGAForTUI(ctx context.Context, tracks []playlist.Track, sharedCfg *config.SharedConfig, updates chan<- tui.Update, epoch int) {
 	// Create converter channel for GA updates
 	// Buffer of 10 provides smoothing between GA update rate and converter processing:
 	// - GA sends updates every 50 generations OR on fitness improvement
@@ -231,14 +231,18 @@ func runGAForTUI(ctx context.Context, tracks []playlist.Track, sharedCfg *Shared
 		}
 	}()
 
+	// Build edge fitness cache (required for fitness calculations)
+	gaCtx := buildEdgeFitnessCache(tracks)
+
 	// Create tracker with the GA update channel
 	tracker := &Tracker{
 		updateChan:   gaUpdateChan,
 		sharedConfig: sharedCfg,
+		gaCtx:        gaCtx,
 		epoch:        epoch,
 		lastGenTime:  time.Now(),
 	}
 	defer tracker.Close()
 
-	geneticSort(ctx, tracks, sharedCfg, tracker)
+	geneticSort(ctx, tracks, sharedCfg, tracker, gaCtx)
 }

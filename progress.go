@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"playlist-sorter/config"
 	"playlist-sorter/playlist"
 )
 
@@ -18,7 +19,8 @@ const (
 // Tracker tracks progress update state
 type Tracker struct {
 	updateChan   chan<- GAUpdate
-	sharedConfig *SharedConfig
+	sharedConfig *config.SharedConfig
+	gaCtx        *GAContext
 	epoch        int // GA run epoch for detecting stale updates
 	lastGenTime  time.Time
 	lastGenCount int
@@ -43,7 +45,7 @@ func (pt *Tracker) SendUpdate(gen int, bestIndividual []playlist.Track, fitnessI
 
 	// Get current config and send the all-time best individual with accurate breakdown
 	config := pt.sharedConfig.Get()
-	breakdown := calculateFitnessWithBreakdown(bestIndividual, config)
+	breakdown := calculateFitnessWithBreakdown(bestIndividual, config, pt.gaCtx)
 
 	select {
 	case pt.updateChan <- GAUpdate{

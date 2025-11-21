@@ -11,19 +11,6 @@ import (
 	"playlist-sorter/playlist"
 )
 
-// mockSharedConfig implements SharedConfig for testing
-type mockSharedConfig struct {
-	cfg config.GAConfig
-}
-
-func (m *mockSharedConfig) Get() config.GAConfig {
-	return m.cfg
-}
-
-func (m *mockSharedConfig) Update(cfg config.GAConfig) {
-	m.cfg = cfg
-}
-
 // createTestModel creates a model with mock dependencies for testing
 func createTestModel(tracks []playlist.Track) model {
 	opts := Options{
@@ -32,7 +19,8 @@ func createTestModel(tracks []playlist.Track) model {
 		DryRun:       false,
 	}
 
-	sharedCfg := &mockSharedConfig{cfg: config.DefaultConfig()}
+	sharedCfg := &config.SharedConfig{}
+	sharedCfg.Update(config.DefaultConfig())
 
 	// Mock functions for testing
 	mockRunGA := func(_ context.Context, _ []playlist.Track, _ chan<- Update, _ int) {

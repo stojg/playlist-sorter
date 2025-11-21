@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/BurntSushi/toml"
 )
@@ -129,4 +130,25 @@ func roundConfigPrecision(config GAConfig) GAConfig {
 	config.LowEnergyBiasWeight = round(config.LowEnergyBiasWeight)
 
 	return config
+}
+
+// SharedConfig wraps GAConfig with a mutex for thread-safe access between GA and TUI
+type SharedConfig struct {
+	mu     sync.RWMutex
+	config GAConfig
+}
+
+// Get returns a copy of the current config (thread-safe read)
+func (sc *SharedConfig) Get() GAConfig {
+	sc.mu.RLock()
+	defer sc.mu.RUnlock()
+
+	return sc.config
+}
+
+// Update updates the config (thread-safe write)
+func (sc *SharedConfig) Update(cfg GAConfig) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	sc.config = cfg
 }

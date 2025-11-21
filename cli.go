@@ -14,6 +14,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"playlist-sorter/config"
 	"playlist-sorter/playlist"
 
 	"golang.org/x/term"
@@ -56,15 +57,15 @@ func RunCLI(opts RunOptions) error {
 	}()
 
 	// Calculate fitness bounds for context
-	theoreticalMin := calculateTheoreticalMinimum(data.Tracks, data.Config)
-	initialFitness := calculateFitness(data.Tracks, data.Config)
+	theoreticalMin := calculateTheoreticalMinimum(data.Tracks, data.Config, data.GACtx)
+	initialFitness := calculateFitness(data.Tracks, data.Config, data.GACtx)
 
 	fmt.Println("\nOptimizing playlist... (press Ctrl+C to stop early, or wait up to 1 hour)")
 	fmt.Printf("Initial fitness: %.10f\n", initialFitness)
 	fmt.Printf("Theoretical minimum: %.10f (not achievable, conflicting constraints)\n", theoreticalMin)
 	fmt.Println()
 
-	sortedTracks := cliGeneticSort(ctx, data.Tracks, data.SharedConfig, opts.PlaylistPath)
+	sortedTracks := cliGeneticSort(ctx, data.Tracks, data.SharedConfig, data.GACtx, opts.PlaylistPath)
 
 	// Show sorted playlist with tabwriter
 	fmt.Println("\nSorted playlist:")
@@ -119,7 +120,7 @@ func RunCLI(opts RunOptions) error {
 }
 
 // cliGeneticSort wraps geneticSort with CLI-specific progress display
-func cliGeneticSort(ctx context.Context, tracks []playlist.Track, config *SharedConfig, playlistPath string) []playlist.Track {
+func cliGeneticSort(ctx context.Context, tracks []playlist.Track, sharedCfg *config.SharedConfig, gaCtx *GAContext, playlistPath string) []playlist.Track {
 	startTime := time.Now()
 
 	// Create update channel for tracking progress
@@ -171,13 +172,14 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, config *Shared
 
 	progress := &Tracker{
 		updateChan:   updateChan,
-		sharedConfig: config,
+		sharedConfig: sharedCfg,
+		gaCtx:        gaCtx,
 		lastGenTime:  startTime,
 	}
 	defer progress.Close()
 
 	go func() {
-		result := geneticSort(ctx, tracks, config, progress)
+		result := geneticSort(ctx, tracks, sharedCfg, progress, gaCtx)
 		done <- result
 	}()
 

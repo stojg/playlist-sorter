@@ -11,6 +11,9 @@ import (
 	"playlist-sorter/playlist"
 )
 
+// testCtx holds the GAContext for all tests
+var testCtx *GAContext
+
 // Initialize edge cache once for all tests with a reasonable size
 func init() {
 	// Build cache with 10 test tracks (enough for all fitness tests)
@@ -30,7 +33,7 @@ func init() {
 			Genre:     "Electronic",
 		}
 	}
-	buildEdgeFitnessCache(testTracks)
+	testCtx = buildEdgeFitnessCache(testTracks)
 }
 
 // parseKey is a helper to parse keys for test tracks
@@ -214,7 +217,7 @@ func TestFitnessCalculation(t *testing.T) {
 				}()
 			}
 
-			fitness := calculateFitness(tt.tracks, cfg)
+			fitness := calculateFitness(tt.tracks, cfg, testCtx)
 
 			// Fitness should be non-negative
 			if fitness < 0 {
@@ -241,7 +244,7 @@ func TestFitnessBreakdown(t *testing.T) {
 		{Index: 2, Path: "C", Key: "3A", ParsedKey: parseKey("3A"), BPM: 130.0, Energy: 60, Artist: "Artist2", Album: "Album2", Genre: "House"},
 	}
 
-	breakdown := calculateFitnessWithBreakdown(tracks, cfg)
+	breakdown := calculateFitnessWithBreakdown(tracks, cfg, testCtx)
 
 	// Verify breakdown has all components
 	if breakdown.Total < 0 {
@@ -296,8 +299,8 @@ func TestFitnessImprovement(t *testing.T) {
 		{Index: 2, Path: "C", Key: "1A", ParsedKey: parseKey("1A"), BPM: 100.0, Energy: 30, Artist: "Artist1", Album: "Album1"}, // Same artist/album again
 	}
 
-	goodFitness := calculateFitness(goodOrdering, cfg)
-	badFitness := calculateFitness(badOrdering, cfg)
+	goodFitness := calculateFitness(goodOrdering, cfg, testCtx)
+	badFitness := calculateFitness(badOrdering, cfg, testCtx)
 
 	t.Logf("Good ordering fitness: %.4f", goodFitness)
 	t.Logf("Bad ordering fitness: %.4f", badFitness)
@@ -415,7 +418,7 @@ func BenchmarkCalculateFitness(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		calculateFitness(tracks, cfg)
+		calculateFitness(tracks, cfg, testCtx)
 	}
 }
 
@@ -442,7 +445,7 @@ func BenchmarkCalculateFitnessWithBreakdown(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		calculateFitnessWithBreakdown(tracks, cfg)
+		calculateFitnessWithBreakdown(tracks, cfg, testCtx)
 	}
 }
 

@@ -67,7 +67,7 @@ type gaRestartMsg struct{}
 // model holds the TUI state
 type model struct {
 	// Dependencies (concrete types following Go philosophy)
-	sharedConfig  SharedConfig
+	sharedConfig  *config.SharedConfig
 	runGA         func(context.Context, []playlist.Track, chan<- Update, int)
 	loadPlaylist  func(string, bool) ([]playlist.Track, error)
 	writePlaylist func(string, []playlist.Track) error
@@ -364,17 +364,10 @@ func truncate(s string, maxLen int) string {
 
 // ========== Types and Dependencies ==========
 
-// SharedConfig provides thread-safe access to GA configuration.
-// Minimal interface discovered by TUI, not mandated to providers.
-type SharedConfig interface {
-	Get() config.GAConfig
-	Update(cfg config.GAConfig)
-}
-
 // Dependencies holds the concrete dependencies needed by the TUI.
 // Following Go philosophy: accept concrete types, not interfaces.
 type Dependencies struct {
-	SharedConfig  SharedConfig
+	SharedConfig  *config.SharedConfig
 	RunGA         func(ctx context.Context, tracks []playlist.Track, updates chan<- Update, epoch int)
 	LoadPlaylist  func(path string, requireMultiple bool) ([]playlist.Track, error)
 	WritePlaylist func(path string, tracks []playlist.Track) error

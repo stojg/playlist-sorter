@@ -34,7 +34,8 @@ type PlaylistOptions struct {
 type OptimizationContext struct {
 	Tracks       []playlist.Track
 	Config       config.GAConfig
-	SharedConfig *SharedConfig
+	SharedConfig *config.SharedConfig
+	GACtx        *GAContext
 }
 
 // InitializePlaylist performs full initialization: load playlist, load config, build edge cache
@@ -50,17 +51,17 @@ func InitializePlaylist(opts PlaylistOptions) (*OptimizationContext, error) {
 	cfg, _ := config.LoadConfig(config.GetConfigPath())
 
 	// Wrap config in SharedConfig for thread-safe access
-	sharedConfig := &SharedConfig{
-		config: cfg,
-	}
+	sharedConfig := &config.SharedConfig{}
+	sharedConfig.Update(cfg)
 
 	// Build edge fitness cache (required for fitness calculations)
-	buildEdgeFitnessCache(tracks)
+	gaCtx := buildEdgeFitnessCache(tracks)
 
 	return &OptimizationContext{
 		Tracks:       tracks,
 		Config:       cfg,
 		SharedConfig: sharedConfig,
+		GACtx:        gaCtx,
 	}, nil
 }
 

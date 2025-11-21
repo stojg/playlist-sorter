@@ -126,27 +126,6 @@ type GAUpdate struct {
 	Breakdown    playlist.Breakdown // Fitness breakdown (shared type, no duplication)
 }
 
-// SharedConfig wraps GAConfig with a mutex for thread-safe access between GA and TUI
-type SharedConfig struct {
-	mu     sync.RWMutex
-	config config.GAConfig
-}
-
-// Get returns a copy of the current config (thread-safe read)
-func (sc *SharedConfig) Get() config.GAConfig {
-	sc.mu.RLock()
-	defer sc.mu.RUnlock()
-
-	return sc.config
-}
-
-// Update updates the config (thread-safe write)
-func (sc *SharedConfig) Update(cfg config.GAConfig) {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
-	sc.config = cfg
-}
-
 // minBPMDistance finds the minimum BPM difference considering half/double time mixing.
 // DJs often mix tracks at 2:1 or 1:2 tempo ratios (e.g., 85 BPM mixes well with 170 BPM).
 func minBPMDistance(bpm1, bpm2 float64) float64 {
@@ -191,14 +170,12 @@ type FitnessNormalizers struct {
 	MaxGenreChange  float64 // Maximum possible genre change penalty
 }
 
-// edgeDataCache stores pre-calculated base values for track transitions
-// Indexed by [fromTrackIdx][toTrackIdx] for O(1) lookup
-// Built once using sync.Once to avoid race conditions
-var (
-	edgeDataCache [][]EdgeData
-	normalizers   FitnessNormalizers
-	cacheOnce     sync.Once
-)
+// GAContext holds pre-calculated data for fitness evaluation.
+// Making this explicit (instead of global) improves testability and makes data flow visible.
+type GAContext struct {
+	edgeCache   [][]EdgeData
+	normalizers FitnessNormalizers
+}
 
 // geneticSort optimizes track ordering using a genetic algorithm with context-based cancellation
 //
@@ -223,18 +200,17 @@ var (
 // - BPM differences (accounting for half/double time mixing)
 // - Position bias (prefers low-energy tracks at start of playlist)
 // - Genre changes (optional, signed weight: positive=cluster, negative=spread)
-func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *SharedConfig, progress *Tracker) []playlist.Track {
+func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *config.SharedConfig, updateChan chan<- GAUpdate, epoch int, gaCtx *GAContext) []playlist.Track {
 	var (
-		startTime = time.Now()
-		gen       = 0
-		genesLen  = len(tracks)
+		startTime    = time.Now()
+		gen          = 0
+		genesLen     = len(tracks)
+		lastGenTime  = time.Now()
+		lastGenCount = 0
 	)
 
 	// get the initial config snapshot
 	config := sharedConfig.Get()
-
-	// pre-calculate fitness score for all possible track pairs so we don't do this in tight loops
-	buildEdgeFitnessCache(tracks)
 
 	// create a worker pool for parallel fitness evaluation
 	workerPool := newWorkerPool(runtime.NumCPU())
@@ -303,7 +279,7 @@ loop:
 		debugf("[GA] Starting fitness evaluation for gen %d", gen)
 		for i := range currentGen {
 			workerPool.submit(func() {
-				scoredPopulation[i] = Individual{Genes: currentGen[i], Score: calculateFitness(currentGen[i], config)}
+				scoredPopulation[i] = Individual{Genes: currentGen[i], Score: calculateFitness(currentGen[i], config, gaCtx)}
 			})
 		}
 		workerPool.wait()
@@ -322,7 +298,7 @@ loop:
 			debugf("[GA] Starting 2-opt for gen %d (topCount=%d)", gen, topCount)
 			for i := range topCount {
 				workerPool.submit(func() {
-					twoOptImprove(scoredPopulation[i].Genes, config)
+					twoOptImprove(scoredPopulation[i].Genes, config, gaCtx)
 				})
 			}
 			workerPool.wait()
@@ -364,7 +340,7 @@ loop:
 				scoredPopulation[worstIdx].Genes[a], scoredPopulation[worstIdx].Genes[b] = scoredPopulation[worstIdx].Genes[b], scoredPopulation[worstIdx].Genes[a]
 			}
 			// Re-evaluate fitness after mutation
-			scoredPopulation[worstIdx].Score = calculateFitness(scoredPopulation[worstIdx].Genes, config)
+			scoredPopulation[worstIdx].Score = calculateFitness(scoredPopulation[worstIdx].Genes, config, gaCtx)
 		}
 
 		parents := make([][]playlist.Track, populationSize)
@@ -452,117 +428,119 @@ loop:
 
 // buildEdgeFitnessCache pre-calculates base values for all possible track pairs
 // Weights are NOT cached - they're applied at evaluation time for live parameter updates
-// Uses sync.Once to ensure cache is built exactly once, avoiding race conditions
+// Returns a GAContext containing the cache and normalizers
 // Note: Track Index values must be assigned before calling this function
-func buildEdgeFitnessCache(tracks []playlist.Track) {
-	cacheOnce.Do(func() {
-		n := len(tracks)
+func buildEdgeFitnessCache(tracks []playlist.Track) *GAContext {
+	n := len(tracks)
 
-		// Allocate 2D array for edge data
-		edgeDataCache = make([][]EdgeData, n)
-		for i := range edgeDataCache {
-			edgeDataCache[i] = make([]EdgeData, n)
+	ctx := &GAContext{
+		edgeCache: make([][]EdgeData, n),
+	}
+
+	for i := range ctx.edgeCache {
+		ctx.edgeCache[i] = make([]EdgeData, n)
+	}
+
+	// Pre-calculate base values for all track pairs
+	for i := range n {
+		for j := range n {
+			if i == j {
+				continue // Skip self-edges
+			}
+
+			t1, t2 := &tracks[i], &tracks[j]
+
+			// Harmonic distance (base value)
+			harmonicDist := playlist.HarmonicDistanceParsed(t1.ParsedKey, t2.ParsedKey)
+
+			// Artist/album matches (boolean)
+			sameArtist := t1.Artist == t2.Artist
+			sameAlbum := t1.Album == t2.Album
+
+			// Energy delta (base value)
+			energyDelta := math.Abs(float64(t1.Energy - t2.Energy))
+
+			// BPM delta (base value, accounting for half/double time)
+			bpmDelta := 0.0
+			if t1.BPM > 0 && t2.BPM > 0 {
+				bpmDelta = minBPMDistance(t1.BPM, t2.BPM)
+			}
+
+			// Genre difference (hierarchical similarity: 0.0 = same, 1.0 = different)
+			genreDiff := playlist.GenreSimilarity(t1.Genre, t2.Genre)
+
+			// Store base values in cache (no weights applied)
+			ctx.edgeCache[i][j] = EdgeData{
+				HarmonicDistance: harmonicDist,
+				SameArtist:       sameArtist,
+				SameAlbum:        sameAlbum,
+				EnergyDelta:      energyDelta,
+				BPMDelta:         bpmDelta,
+				GenreDifference:  genreDiff,
+			}
+		}
+	}
+
+	// Calculate normalization constants for 0-1 scaled fitness
+	// These represent maximum possible values for each component across the entire playlist
+	ctx.normalizers.MaxHarmonic = camelotWheelPositions * float64(n-1)
+
+	ctx.normalizers.MaxSameArtist = float64(n - 1) // Worst case: all transitions have same artist
+	ctx.normalizers.MaxSameAlbum = float64(n - 1)  // Worst case: all transitions have same album
+
+	// Calculate max energy delta from actual track data
+	minEnergy, maxEnergy := float64(tracks[0].Energy), float64(tracks[0].Energy)
+
+	for i := 1; i < n; i++ {
+		e := float64(tracks[i].Energy)
+		if e < minEnergy {
+			minEnergy = e
 		}
 
-		// Pre-calculate base values for all track pairs
-		for i := range n {
-			for j := range n {
-				if i == j {
-					continue // Skip self-edges
-				}
+		if e > maxEnergy {
+			maxEnergy = e
+		}
+	}
 
-				t1, t2 := &tracks[i], &tracks[j]
+	ctx.normalizers.MaxEnergyDelta = (maxEnergy - minEnergy) * float64(n-1)
 
-				// Harmonic distance (base value)
-				harmonicDist := playlist.HarmonicDistanceParsed(t1.ParsedKey, t2.ParsedKey)
+	// Calculate max BPM delta from actual track data
+	// Find the maximum BPM distance considering half/double time matching
+	maxBPMDist := 0.0
 
-				// Artist/album matches (boolean)
-				sameArtist := t1.Artist == t2.Artist
-				sameAlbum := t1.Album == t2.Album
-
-				// Energy delta (base value)
-				energyDelta := math.Abs(float64(t1.Energy - t2.Energy))
-
-				// BPM delta (base value, accounting for half/double time)
-				bpmDelta := 0.0
-				if t1.BPM > 0 && t2.BPM > 0 {
-					bpmDelta = minBPMDistance(t1.BPM, t2.BPM)
-				}
-
-				// Genre difference (hierarchical similarity: 0.0 = same, 1.0 = different)
-				genreDiff := playlist.GenreSimilarity(t1.Genre, t2.Genre)
-
-				// Store base values in cache (no weights applied)
-				edgeDataCache[i][j] = EdgeData{
-					HarmonicDistance: harmonicDist,
-					SameArtist:       sameArtist,
-					SameAlbum:        sameAlbum,
-					EnergyDelta:      energyDelta,
-					BPMDelta:         bpmDelta,
-					GenreDifference:  genreDiff,
+	for i := range n {
+		for j := range n {
+			if i != j && tracks[i].BPM > 0 && tracks[j].BPM > 0 {
+				if ctx.edgeCache[i][j].BPMDelta > maxBPMDist {
+					maxBPMDist = ctx.edgeCache[i][j].BPMDelta
 				}
 			}
 		}
+	}
 
-		// Calculate normalization constants for 0-1 scaled fitness
-		// These represent maximum possible values for each component across the entire playlist
-		normalizers.MaxHarmonic = camelotWheelPositions * float64(n-1)
+	ctx.normalizers.MaxBPMDelta = maxBPMDist * float64(n-1)
 
-		normalizers.MaxSameArtist = float64(n - 1) // Worst case: all transitions have same artist
-		normalizers.MaxSameAlbum = float64(n - 1)  // Worst case: all transitions have same album
+	// Calculate max genre change: worst case is all transitions are completely different (1.0)
+	ctx.normalizers.MaxGenreChange = float64(n - 1)
 
-		// Calculate max energy delta from actual track data
-		minEnergy, maxEnergy := float64(tracks[0].Energy), float64(tracks[0].Energy)
+	// Calculate max position bias: maximum energy value * max position weight (1.0)
+	// This normalizes each position independently, making the bias weight comparable to other weights
+	// The bias portion and position weights are applied at evaluation time
+	ctx.normalizers.MaxPositionBias = maxEnergy
 
-		for i := 1; i < n; i++ {
-			e := float64(tracks[i].Energy)
-			if e < minEnergy {
-				minEnergy = e
-			}
-
-			if e > maxEnergy {
-				maxEnergy = e
-			}
-		}
-
-		normalizers.MaxEnergyDelta = (maxEnergy - minEnergy) * float64(n-1)
-
-		// Calculate max BPM delta from actual track data
-		// Find the maximum BPM distance considering half/double time matching
-		maxBPMDist := 0.0
-
-		for i := range n {
-			for j := range n {
-				if i != j && tracks[i].BPM > 0 && tracks[j].BPM > 0 {
-					if edgeDataCache[i][j].BPMDelta > maxBPMDist {
-						maxBPMDist = edgeDataCache[i][j].BPMDelta
-					}
-				}
-			}
-		}
-
-		normalizers.MaxBPMDelta = maxBPMDist * float64(n-1)
-
-		// Calculate max genre change: worst case is all transitions are completely different (1.0)
-		normalizers.MaxGenreChange = float64(n - 1)
-
-		// Calculate max position bias: maximum energy value * max position weight (1.0)
-		// This normalizes each position independently, making the bias weight comparable to other weights
-		// The bias portion and position weights are applied at evaluation time
-		normalizers.MaxPositionBias = maxEnergy
-	})
+	return ctx
 }
 
 // calculateFitness computes the fitness score for a given playlist ordering
-func calculateFitness(individual []playlist.Track, config config.GAConfig) float64 {
-	breakdown := calculateFitnessWithBreakdown(individual, config)
+func calculateFitness(individual []playlist.Track, config config.GAConfig, ctx *GAContext) float64 {
+	breakdown := calculateFitnessWithBreakdown(individual, config, ctx)
 
 	return breakdown.Total
 }
 
 // calculateFitnessWithBreakdown computes fitness and returns detailed breakdown
-func calculateFitnessWithBreakdown(individual []playlist.Track, config config.GAConfig) playlist.Breakdown {
-	return segmentFitnessWithBreakdown(individual, 0, len(individual)-1, config)
+func calculateFitnessWithBreakdown(individual []playlist.Track, config config.GAConfig, ctx *GAContext) playlist.Breakdown {
+	return segmentFitnessWithBreakdown(individual, 0, len(individual)-1, config, ctx)
 }
 
 // orderCrossover (OX) creates offspring by preserving order from parents
@@ -648,14 +626,14 @@ func orderCrossover(dst, parent1, parent2 []playlist.Track, present map[string]b
 //
 // Time complexity: O(n²) per iteration, where n = playlist length
 // Space complexity: O(n) for tracking exhausted positions
-func twoOptImprove(tracks []playlist.Track, config config.GAConfig) {
+func twoOptImprove(tracks []playlist.Track, config config.GAConfig, ctx *GAContext) {
 	n := len(tracks)
 
 	// Track positions that recently failed to improve (exhausted from search)
 	positionsExhausted := make([]bool, n)
 
 	// Calculate initial full fitness once
-	currentFitness := calculateFitness(tracks, config)
+	currentFitness := calculateFitness(tracks, config, ctx)
 
 	// Safety limit to prevent infinite loops from floating point issues
 	const maxIterations = 1000
@@ -685,11 +663,11 @@ func twoOptImprove(tracks []playlist.Track, config config.GAConfig) {
 				}
 
 				// Calculate fitness for the segment [i:endPos]
-				oldSegmentFitness := segmentFitness(tracks, i, endPos, config)
+				oldSegmentFitness := segmentFitness(tracks, i, endPos, config, ctx)
 
 				// Reverse segment [i,j] (inclusive), then re-evaluate fitness for [i,endPos]
 				reverseSegment(tracks, i, j)
-				newSegmentFitness := segmentFitness(tracks, i, endPos, config)
+				newSegmentFitness := segmentFitness(tracks, i, endPos, config, ctx)
 
 				newFitness := currentFitness + newSegmentFitness - oldSegmentFitness
 
@@ -722,22 +700,22 @@ func twoOptImprove(tracks []playlist.Track, config config.GAConfig) {
 
 // segmentFitness calculates fitness contribution for a track segment
 // Reads base values from cache and applies current config weights at evaluation time
-func segmentFitness(tracks []playlist.Track, start, end int, config config.GAConfig) float64 {
-	return segmentFitnessWithBreakdown(tracks, start, end, config).Total
+func segmentFitness(tracks []playlist.Track, start, end int, config config.GAConfig, ctx *GAContext) float64 {
+	return segmentFitnessWithBreakdown(tracks, start, end, config, ctx).Total
 }
 
 // segmentFitnessWithBreakdown calculates fitness and returns breakdown of components
-func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config config.GAConfig) playlist.Breakdown {
+func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config config.GAConfig, ctx *GAContext) playlist.Breakdown {
 	var breakdown playlist.Breakdown
 
 	biasThreshold := int(float64(len(tracks)) * config.LowEnergyBiasPortion)
 	// Precompute genre-related values to avoid repeated checks and calculations
-	genreEnabled := config.GenreWeight != 0 && normalizers.MaxGenreChange > 0
+	genreEnabled := config.GenreWeight != 0 && ctx.normalizers.MaxGenreChange > 0
 
 	var genreAbsWeight, genreSign float64
 
 	if genreEnabled {
-		genreAbsWeight = math.Abs(config.GenreWeight) / normalizers.MaxGenreChange
+		genreAbsWeight = math.Abs(config.GenreWeight) / ctx.normalizers.MaxGenreChange
 
 		if config.GenreWeight > 0 {
 			genreSign = 1.0
@@ -753,23 +731,23 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 			// Use pre-assigned Index values for O(1) cache lookup
 			idx1 := tracks[j-1].Index
 			idx2 := tracks[j].Index
-			edge := edgeDataCache[idx1][idx2]
+			edge := ctx.edgeCache[idx1][idx2]
 
 			// Normalize each component to [0,1] before applying weights
 			// This ensures all weights have equal influence when set to same value
-			breakdown.Harmonic += applyWeightedPenalty(float64(edge.HarmonicDistance), normalizers.MaxHarmonic, config.HarmonicWeight)
+			breakdown.Harmonic += applyWeightedPenalty(float64(edge.HarmonicDistance), ctx.normalizers.MaxHarmonic, config.HarmonicWeight)
 
 			if edge.SameArtist {
-				breakdown.SameArtist += applyWeightedPenalty(1.0, normalizers.MaxSameArtist, config.SameArtistPenalty)
+				breakdown.SameArtist += applyWeightedPenalty(1.0, ctx.normalizers.MaxSameArtist, config.SameArtistPenalty)
 			}
 
 			if edge.SameAlbum {
-				breakdown.SameAlbum += applyWeightedPenalty(1.0, normalizers.MaxSameAlbum, config.SameAlbumPenalty)
+				breakdown.SameAlbum += applyWeightedPenalty(1.0, ctx.normalizers.MaxSameAlbum, config.SameAlbumPenalty)
 			}
 
-			breakdown.EnergyDelta += applyWeightedPenalty(edge.EnergyDelta, normalizers.MaxEnergyDelta, config.EnergyDeltaWeight)
+			breakdown.EnergyDelta += applyWeightedPenalty(edge.EnergyDelta, ctx.normalizers.MaxEnergyDelta, config.EnergyDeltaWeight)
 
-			breakdown.BPMDelta += applyWeightedPenalty(edge.BPMDelta, normalizers.MaxBPMDelta, config.BPMDeltaWeight)
+			breakdown.BPMDelta += applyWeightedPenalty(edge.BPMDelta, ctx.normalizers.MaxBPMDelta, config.BPMDeltaWeight)
 
 			// Genre penalty: signed weight controls clustering vs spreading
 			if genreEnabled {
@@ -788,7 +766,7 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 		if j < biasThreshold {
 			positionWeight := 1.0 - float64(j)/float64(biasThreshold)
 			rawPositionBias := float64(tracks[j].Energy) * positionWeight
-			normalizedPositionBias := rawPositionBias / normalizers.MaxPositionBias
+			normalizedPositionBias := rawPositionBias / ctx.normalizers.MaxPositionBias
 			energyPositionPenalty := normalizedPositionBias * config.LowEnergyBiasWeight
 			breakdown.PositionBias += energyPositionPenalty
 		}
@@ -821,7 +799,7 @@ func reverseSegment(tracks []playlist.Track, start, end int) {
 // calculateTheoreticalMinimum calculates the theoretical minimum fitness score
 // This is NOT achievable in practice as the constraints conflict with each other
 // (e.g., monotonic energy vs clustered low energy at start), but provides a lower bound
-func calculateTheoreticalMinimum(tracks []playlist.Track, config config.GAConfig) float64 {
+func calculateTheoreticalMinimum(tracks []playlist.Track, config config.GAConfig, ctx *GAContext) float64 {
 	n := len(tracks)
 	if n == 0 {
 		return 0.0
@@ -849,8 +827,8 @@ func calculateTheoreticalMinimum(tracks []playlist.Track, config config.GAConfig
 		minEnergyDelta += math.Abs(float64(energies[i] - energies[i-1]))
 	}
 
-	if normalizers.MaxEnergyDelta > 0 {
-		minEnergyDelta = (minEnergyDelta / normalizers.MaxEnergyDelta) * config.EnergyDeltaWeight
+	if ctx.normalizers.MaxEnergyDelta > 0 {
+		minEnergyDelta = (minEnergyDelta / ctx.normalizers.MaxEnergyDelta) * config.EnergyDeltaWeight
 	}
 
 	// 5. BPM Delta: Best case = tracks sorted by BPM
@@ -869,8 +847,8 @@ func calculateTheoreticalMinimum(tracks []playlist.Track, config config.GAConfig
 		minBPMDelta += math.Abs(bpms[i] - bpms[i-1])
 	}
 
-	if normalizers.MaxBPMDelta > 0 && len(bpms) > 1 {
-		minBPMDelta = (minBPMDelta / normalizers.MaxBPMDelta) * config.BPMDeltaWeight
+	if ctx.normalizers.MaxBPMDelta > 0 && len(bpms) > 1 {
+		minBPMDelta = (minBPMDelta / ctx.normalizers.MaxBPMDelta) * config.BPMDeltaWeight
 	}
 
 	// 6. Position Bias: Best case = lowest energy tracks at start
@@ -881,8 +859,8 @@ func calculateTheoreticalMinimum(tracks []playlist.Track, config config.GAConfig
 		positionWeight := 1.0 - float64(j)/float64(biasThreshold)
 
 		rawBias := float64(energies[j]) * positionWeight
-		if normalizers.MaxPositionBias > 0 {
-			minPositionBias += (rawBias / normalizers.MaxPositionBias) * config.LowEnergyBiasWeight
+		if ctx.normalizers.MaxPositionBias > 0 {
+			minPositionBias += (rawBias / ctx.normalizers.MaxPositionBias) * config.LowEnergyBiasWeight
 		}
 	}
 
