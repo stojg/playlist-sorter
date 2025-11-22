@@ -63,8 +63,10 @@ func RunCLI(opts RunOptions) error {
 	initialFitness := calculateFitness(data.Tracks, data.Config, data.GACtx)
 
 	fmt.Println("\nOptimizing playlist... (press Ctrl+C to stop early, or wait up to 15 minutes)")
-	fmt.Printf("Initial fitness: %.10f\n", initialFitness)
-	fmt.Printf("Theoretical minimum: %.10f (not achievable, conflicting constraints)\n", theoreticalMin)
+	initialStr := FormatMinimalPrecision(theoreticalMin, initialFitness)
+	theoreticalStr := FormatMinimalPrecision(initialFitness, theoreticalMin)
+	fmt.Printf("Initial fitness: %s\n", initialStr)
+	fmt.Printf("Theoretical minimum: %s (not achievable, conflicting constraints)\n", theoreticalStr)
 	fmt.Println()
 
 	sortedTracks := cliGeneticSort(ctx, data.Tracks, data.SharedConfig, data.GACtx, opts.PlaylistPath)
@@ -204,7 +206,8 @@ loop:
 					fmt.Print("\r\033[K")
 				}
 
-				fmt.Printf("%s Gen %d - fitness: %.10f\n", elapsedStr, currentGen, update.BestFitness)
+				fitnessStr := FormatMinimalPrecision(previousBestFitness, update.BestFitness)
+				fmt.Printf("%s Gen %d - fitness: %s\n", elapsedStr, currentGen, fitnessStr)
 				previousBestFitness = update.BestFitness
 
 				// Save playlist to disk for live monitoring with --view mode
