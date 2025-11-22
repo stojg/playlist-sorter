@@ -16,14 +16,21 @@ import (
 
 	"playlist-sorter/config"
 	"playlist-sorter/playlist"
-
-	"golang.org/x/term"
 )
 
 const (
 	spinnerUpdateInterval     = 500 * time.Millisecond
 	fitnessImprovementEpsilon = 1e-10
 )
+
+// isTTY checks if the given file is a terminal
+func isTTY(f *os.File) bool {
+	stat, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return (stat.Mode() & os.ModeCharDevice) != 0
+}
 
 // RunCLI executes CLI mode optimization
 func RunCLI(opts RunOptions) error {
@@ -123,14 +130,14 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, sharedCfg *con
 	previousBestFitness := math.MaxFloat64
 
 	// Detect if stdout is a TTY - no spinner needed in non-interactive contexts (cron, pipes, etc.)
-	isTTY := term.IsTerminal(int(os.Stdout.Fd()))
+	isTerminal := isTTY(os.Stdout)
 
 	// Status line animation and ticker
 	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	spinnerIdx := 0
 
 	var statusTicker *time.Ticker
-	if isTTY {
+	if isTerminal {
 		statusTicker = time.NewTicker(spinnerUpdateInterval)
 		defer statusTicker.Stop()
 	}
@@ -149,7 +156,7 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, sharedCfg *con
 
 	// Helper to print status line (overwrites itself in TTY, appends in non-TTY)
 	printStatus := func(gen int) {
-		if !isTTY {
+		if !isTerminal {
 			// Non-TTY: skip spinner updates entirely to avoid log spam
 			return
 		}
@@ -192,7 +199,7 @@ loop:
 				elapsed := time.Since(startTime)
 				elapsedStr := formatElapsed(elapsed)
 
-				if isTTY {
+				if isTerminal {
 					// Clear status line before printing progress (TTY only)
 					fmt.Print("\r\033[K")
 				}
@@ -223,7 +230,7 @@ loop:
 	}
 
 	// Clear status line at end (TTY only)
-	if isTTY {
+	if isTerminal {
 		fmt.Print("\r\033[K")
 	}
 

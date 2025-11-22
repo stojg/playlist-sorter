@@ -1,6 +1,7 @@
 // ABOUTME: Terminal UI model and core state management
 // ABOUTME: Bubble Tea model implementation with GA integration
 
+// Package tui provides an interactive terminal UI for real-time playlist optimization.
 package tui
 
 import (
@@ -597,16 +598,6 @@ func NewViewportManager(height, cursorPos, totalItems int) *ViewportManager {
 	}
 }
 
-// SetHeight updates the viewport height
-func (vm *ViewportManager) SetHeight(height int) {
-	vm.height = height
-}
-
-// SetCursorPos updates the cursor position
-func (vm *ViewportManager) SetCursorPos(pos int) {
-	vm.cursorPos = pos
-}
-
 // CalculateOffset computes the viewport Y offset to keep cursor visible
 // Returns the offset value that should be applied to the viewport
 //
@@ -647,30 +638,12 @@ func (vm *ViewportManager) CalculateOffset() int {
 // ScrollPhase returns which scrolling phase the cursor is currently in
 type ScrollPhase int
 
+// Scroll phases define viewport scrolling behavior: top (cursor moves), middle (content scrolls), bottom (cursor moves).
 const (
 	TopPhase    ScrollPhase = iota // Cursor moves, viewport at top
 	MiddlePhase                    // Cursor at middle, content scrolls
 	BottomPhase                    // Viewport at bottom, cursor moves
 )
-
-// GetPhase returns the current scrolling phase
-func (vm *ViewportManager) GetPhase() ScrollPhase {
-	if vm.totalItems == 0 || vm.height < 1 {
-		return TopPhase
-	}
-
-	middle := vm.height / 2
-	if vm.cursorPos < middle {
-		return TopPhase
-	}
-
-	bottomThreshold := vm.totalItems - vm.height + middle
-	if vm.cursorPos < bottomThreshold {
-		return MiddlePhase
-	}
-
-	return BottomPhase
-}
 
 // ========== Bubble Tea Lifecycle ==========
 // Init initializes the model

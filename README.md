@@ -156,7 +156,7 @@ Optimizations through profiling (52-track playlist):
 
 ## Configuration
 
-Config stored in `~/.config/playlist-sorter/config.toml`. Edit via TUI (--visual) or manually.
+Config stored in `~/.config/playlist-sorter/config.json`. Edit via TUI (--visual) or manually.
 
 ### Metadata Requirements
 

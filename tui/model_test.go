@@ -39,7 +39,7 @@ func createTestModel(tracks []playlist.Track) model {
 		// Silent in tests
 	}
 
-	return initModel(tracks, opts, sharedCfg, mockRunGA, mockLoadPlaylist, mockWritePlaylist, mockDebugf, "/tmp/test_config.toml")
+	return initModel(tracks, opts, sharedCfg, mockRunGA, mockLoadPlaylist, mockWritePlaylist, mockDebugf, "/tmp/test_config.json")
 }
 
 // createTestTracks creates sample tracks for testing

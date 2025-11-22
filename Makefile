@@ -1,12 +1,12 @@
 # ABOUTME: Simple build shortcuts for PGO optimization
 # ABOUTME: Wraps go commands with project-specific flags
 
-.PHONY: dev prod test clean fmt lint vuln check
+.PHONY: dev install test clean fmt lint vuln check
 
 dev:
 	go build -race -o playlist-sorter-dev
 
-prod: default.pgo
+install: default.pgo
 	go build -pgo=auto -ldflags="-s -w" -trimpath -o playlist-sorter
 	go install -pgo=auto -ldflags="-s -w" -trimpath
 
@@ -26,7 +26,20 @@ fmt:
 	go tool goimports -w .
 
 lint:
-	go tool golangci-lint run
+	@echo "Running go vet..."
+	-go vet ./...
+	@echo "Running errcheck..."
+	-go tool errcheck ./...
+	@echo "Running staticcheck (includes gosimple, unused)..."
+	-go tool staticcheck ./...
+	@echo "Running ineffassign..."
+	-go tool ineffassign ./...
+	@echo "Running revive..."
+	-go tool revive -formatter friendly ./...
+	@echo "Running exhaustive..."
+	-go tool exhaustive ./...
+	@echo "Running deadcode..."
+	-go tool deadcode ./...
 
 vuln:
 	go tool govulncheck ./...

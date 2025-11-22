@@ -1,6 +1,7 @@
 // ABOUTME: Entry point for playlist-sorter application
 // ABOUTME: Handles command-line parsing, profiling, and routing to CLI or TUI modes
 
+// Package main provides the entry point for playlist-sorter, a genetic algorithm-based playlist optimizer.
 package main
 
 import (
@@ -64,7 +65,6 @@ func run() int {
 		opts := tui.Options{
 			PlaylistPath: playlistPath,
 			DryRun:       *dryRun,
-			OutputPath:   *output,
 			DebugLog:     *debug,
 		}
 
@@ -113,7 +113,7 @@ func setupCPUProfile(filename string) func() {
 	}
 
 	if err := pprof.StartCPUProfile(f); err != nil {
-		f.Close()
+		_ = f.Close()
 		log.Fatalf("could not start CPU profile: %v", err)
 	}
 

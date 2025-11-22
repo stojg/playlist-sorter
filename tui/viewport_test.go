@@ -5,6 +5,25 @@ package tui
 
 import "testing"
 
+// getPhase is a test helper that calculates the scroll phase
+func getPhase(vm *ViewportManager) ScrollPhase {
+	if vm.totalItems == 0 || vm.height < 1 {
+		return TopPhase
+	}
+
+	middle := vm.height / 2
+	if vm.cursorPos < middle {
+		return TopPhase
+	}
+
+	bottomThreshold := vm.totalItems - vm.height + middle
+	if vm.cursorPos < bottomThreshold {
+		return MiddlePhase
+	}
+
+	return BottomPhase
+}
+
 func TestViewportManager_TopPhase(t *testing.T) {
 	// Viewport with 10 lines, 50 total items
 	vm := NewViewportManager(10, 0, 50)
@@ -22,14 +41,14 @@ func TestViewportManager_TopPhase(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			vm.SetCursorPos(tt.cursorPos)
+			vm.cursorPos = tt.cursorPos
 
 			offset := vm.CalculateOffset()
 			if offset != tt.wantOffset {
 				t.Errorf("CalculateOffset() = %d, want %d", offset, tt.wantOffset)
 			}
 
-			phase := vm.GetPhase()
+			phase := getPhase(vm)
 			if phase != tt.wantPhase {
 				t.Errorf("GetPhase() = %v, want %v", phase, tt.wantPhase)
 			}
@@ -56,14 +75,14 @@ func TestViewportManager_MiddlePhase(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			vm.SetCursorPos(tt.cursorPos)
+			vm.cursorPos = tt.cursorPos
 
 			offset := vm.CalculateOffset()
 			if offset != tt.wantOffset {
 				t.Errorf("CalculateOffset() = %d, want %d (cursor at middle should give offset = cursorPos - 5)", offset, tt.wantOffset)
 			}
 
-			phase := vm.GetPhase()
+			phase := getPhase(vm)
 			if phase != tt.wantPhase {
 				t.Errorf("GetPhase() = %v, want %v", phase, tt.wantPhase)
 			}
@@ -90,14 +109,14 @@ func TestViewportManager_BottomPhase(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			vm.SetCursorPos(tt.cursorPos)
+			vm.cursorPos = tt.cursorPos
 
 			offset := vm.CalculateOffset()
 			if offset != tt.wantOffset {
 				t.Errorf("CalculateOffset() = %d, want %d", offset, tt.wantOffset)
 			}
 
-			phase := vm.GetPhase()
+			phase := getPhase(vm)
 			if phase != tt.wantPhase {
 				t.Errorf("GetPhase() = %v, want %v", phase, tt.wantPhase)
 			}
@@ -121,7 +140,7 @@ func TestViewportManager_SmallList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			vm.SetCursorPos(tt.cursorPos)
+			vm.cursorPos = tt.cursorPos
 
 			offset := vm.CalculateOffset()
 			if offset != tt.wantOffset {
@@ -170,7 +189,7 @@ func TestViewportManager_HeightUpdate(t *testing.T) {
 	}
 
 	// Update height to 20
-	vm.SetHeight(20)
+	vm.height = 20
 
 	// Middle now = 10, cursor at 25 should give offset 15
 	newOffset := vm.CalculateOffset()
@@ -195,7 +214,7 @@ func TestViewportManager_ExactMiddleList(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			vm.SetCursorPos(tt.cursorPos)
+			vm.cursorPos = tt.cursorPos
 
 			offset := vm.CalculateOffset()
 			if offset != tt.wantOffset {
@@ -213,7 +232,7 @@ func TestViewportManager_PhaseTransitions(t *testing.T) {
 	var offsets []int
 
 	for pos := range 50 {
-		vm.SetCursorPos(pos)
+		vm.cursorPos = pos
 		offsets = append(offsets, vm.CalculateOffset())
 	}
 

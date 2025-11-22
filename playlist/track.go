@@ -60,7 +60,7 @@ func GetTrackMetadata(trackPath string) (*Track, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
-	defer file.Close() // Error not checked - Close() errors on read-only files are rare and not actionable
+	defer func() { _ = file.Close() }()
 
 	// Read metadata tags
 	metadata, err := tag.ReadFrom(file)

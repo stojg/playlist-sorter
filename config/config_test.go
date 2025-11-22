@@ -1,5 +1,5 @@
 // ABOUTME: Tests for configuration load/save functionality
-// ABOUTME: Validates TOML parsing and default config fallback behavior
+// ABOUTME: Validates JSON parsing and default config fallback behavior
 
 package config
 
@@ -18,13 +18,13 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestSaveAndLoadConfig(t *testing.T) {
 	// Create temp file
-	tmpfile, err := os.CreateTemp(t.TempDir(), "playlist-sorter-*.toml")
+	tmpfile, err := os.CreateTemp(t.TempDir(), "playlist-sorter-*.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
+	_ = tmpfile.Close()
 
 	// Save default config
 	cfg := DefaultConfig()
@@ -46,7 +46,7 @@ func TestSaveAndLoadConfig(t *testing.T) {
 
 func TestLoadNonExistentConfig(t *testing.T) {
 	// Loading non-existent file should return defaults without error
-	cfg, err := LoadConfig("/nonexistent/path/config.toml")
+	cfg, err := LoadConfig("/nonexistent/path/config.json")
 	if err != nil {
 		t.Errorf("Expected no error for non-existent file, got: %v", err)
 	}

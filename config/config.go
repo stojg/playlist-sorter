@@ -1,50 +1,50 @@
 // ABOUTME: Configuration management for genetic algorithm parameters
-// ABOUTME: Handles loading/saving TOML config files with fallback to defaults
+// ABOUTME: Handles loading/saving JSON config files with fallback to defaults
 
+// Package config manages genetic algorithm configuration parameters and JSON persistence.
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
-
-	"github.com/BurntSushi/toml"
 )
 
 // GAConfig holds all tunable genetic algorithm parameters
 type GAConfig struct {
 	// Fitness penalty weights
-	HarmonicWeight    float64 `toml:"harmonic_weight"`
-	SameArtistPenalty float64 `toml:"same_artist_penalty"`
-	SameAlbumPenalty  float64 `toml:"same_album_penalty"`
-	EnergyDeltaWeight float64 `toml:"energy_delta_weight"`
-	BPMDeltaWeight    float64 `toml:"bpm_delta_weight"`
-	GenreWeight       float64 `toml:"genre_weight"` // -1.0 (spread) to +1.0 (cluster)
+	HarmonicWeight    float64 `json:"harmonic_weight"`
+	SameArtistPenalty float64 `json:"same_artist_penalty"`
+	SameAlbumPenalty  float64 `json:"same_album_penalty"`
+	EnergyDeltaWeight float64 `json:"energy_delta_weight"`
+	BPMDeltaWeight    float64 `json:"bpm_delta_weight"`
+	GenreWeight       float64 `json:"genre_weight"` // -1.0 (spread) to +1.0 (cluster)
 
 	// Position bias
-	LowEnergyBiasPortion float64 `toml:"low_energy_bias_portion"`
-	LowEnergyBiasWeight  float64 `toml:"low_energy_bias_weight"`
+	LowEnergyBiasPortion float64 `json:"low_energy_bias_portion"`
+	LowEnergyBiasWeight  float64 `json:"low_energy_bias_weight"`
 }
 
 // GetConfigPath returns the default config file path
-// First tries current directory, then falls back to ~/.config/playlist-sorter/config.toml
+// First tries current directory, then falls back to ~/.config/playlist-sorter/config.json
 func GetConfigPath() string {
 	// First try current directory
-	if _, err := os.Stat("./playlist-sorter.toml"); err == nil {
-		return "./playlist-sorter.toml"
+	if _, err := os.Stat("./playlist-sorter.json"); err == nil {
+		return "./playlist-sorter.json"
 	}
 
-	// Then try ~/.config/playlist-sorter/config.toml
+	// Then try ~/.config/playlist-sorter/config.json
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "./playlist-sorter.toml"
+		return "./playlist-sorter.json"
 	}
 
-	return filepath.Join(home, ".config", "playlist-sorter", "config.toml")
+	return filepath.Join(home, ".config", "playlist-sorter", "config.json")
 }
 
-// LoadConfig loads configuration from a TOML file
+// LoadConfig loads configuration from a JSON file
 // If the file doesn't exist or fails to load, returns default config
 func LoadConfig(path string) (GAConfig, error) {
 	// Try to read the file
@@ -58,16 +58,16 @@ func LoadConfig(path string) (GAConfig, error) {
 		return DefaultConfig(), fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Parse TOML
+	// Parse JSON
 	var config GAConfig
-	if err := toml.Unmarshal(data, &config); err != nil {
+	if err := json.Unmarshal(data, &config); err != nil {
 		return DefaultConfig(), fmt.Errorf("failed to parse config file: %w", err)
 	}
 
 	return config, nil
 }
 
-// SaveConfig saves configuration to a TOML file
+// SaveConfig saves configuration to a JSON file
 func SaveConfig(path string, config GAConfig) error {
 	// Ensure directory exists
 	dir := filepath.Dir(path)
@@ -91,8 +91,9 @@ func SaveConfig(path string, config GAConfig) error {
 		}
 	}()
 
-	// Encode config as TOML
-	encoder := toml.NewEncoder(f)
+	// Encode config as JSON with pretty-printing
+	encoder := json.NewEncoder(f)
+	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(config); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
