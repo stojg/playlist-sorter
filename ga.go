@@ -158,10 +158,24 @@ type FitnessNormalizers struct {
 	MaxGenreChange  float64
 }
 
+// NormalizedWeights holds pre-normalized weight values to avoid recalculation
+type NormalizedWeights struct {
+	harmonicFactor     float64
+	energyFactor       float64
+	bpmFactor          float64
+	genreAbsWeight     float64
+	genreSign          float64
+	genreEnabled       bool
+	artistPenaltyRatio float64
+	albumPenaltyRatio  float64
+	positionBiasFactor float64
+}
+
 // GAContext holds pre-calculated data for fitness evaluation
 type GAContext struct {
 	edgeCache   [][]EdgeData
 	normalizers FitnessNormalizers
+	weights     NormalizedWeights
 }
 
 // geneticSort optimizes track ordering using GA with fitness-based selection, crossover, mutation,
@@ -176,6 +190,9 @@ func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *con
 	)
 
 	config := sharedConfig.Get()
+
+	// Pre-normalize weights to avoid division in fitness hot path
+	updateNormalizedWeights(gaCtx, config)
 
 	workerPool := newWorkerPool(runtime.NumCPU())
 	defer workerPool.close()
@@ -373,6 +390,28 @@ loop:
 	}
 
 	return bestIndividual
+}
+
+// updateNormalizedWeights pre-calculates normalized weight values to avoid division in hot path
+func updateNormalizedWeights(ctx *GAContext, config config.GAConfig) {
+	norm := &ctx.normalizers
+
+	ctx.weights.harmonicFactor = config.HarmonicWeight / norm.MaxHarmonic
+	ctx.weights.energyFactor = config.EnergyDeltaWeight / norm.MaxEnergyDelta
+	ctx.weights.bpmFactor = config.BPMDeltaWeight / norm.MaxBPMDelta
+	ctx.weights.artistPenaltyRatio = config.SameArtistPenalty / norm.MaxSameArtist
+	ctx.weights.albumPenaltyRatio = config.SameAlbumPenalty / norm.MaxSameAlbum
+	ctx.weights.positionBiasFactor = config.LowEnergyBiasWeight / norm.MaxPositionBias
+
+	ctx.weights.genreEnabled = config.GenreWeight != 0 && norm.MaxGenreChange > 0
+	if ctx.weights.genreEnabled {
+		ctx.weights.genreAbsWeight = math.Abs(config.GenreWeight) / norm.MaxGenreChange
+		if config.GenreWeight > 0 {
+			ctx.weights.genreSign = 1.0
+		} else {
+			ctx.weights.genreSign = -1.0
+		}
+	}
 }
 
 // buildEdgeFitnessCache pre-calculates base values for track pairs (weights applied at eval time)
@@ -576,19 +615,9 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 	var breakdown playlist.Breakdown
 
 	biasThreshold := int(float64(len(tracks)) * config.LowEnergyBiasPortion)
-	genreEnabled := config.GenreWeight != 0 && ctx.normalizers.MaxGenreChange > 0
 
-	var genreAbsWeight, genreSign float64
-
-	if genreEnabled {
-		genreAbsWeight = math.Abs(config.GenreWeight) / ctx.normalizers.MaxGenreChange
-
-		if config.GenreWeight > 0 {
-			genreSign = 1.0
-		} else {
-			genreSign = -1.0
-		}
-	}
+	// Use pre-normalized weights from ctx to avoid recalculation
+	w := &ctx.weights
 
 	for j := start; j <= end; j++ {
 		if j > 0 { //nolint:nestif
@@ -596,27 +625,28 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 			idx2 := tracks[j].Index
 			edge := ctx.edgeCache[idx1][idx2]
 
-			breakdown.Harmonic += applyWeightedPenalty(float64(edge.HarmonicDistance), ctx.normalizers.MaxHarmonic, config.HarmonicWeight)
+			// Use pre-normalized weights (no division in hot path)
+			breakdown.Harmonic += float64(edge.HarmonicDistance) * w.harmonicFactor
 
 			if edge.SameArtist {
-				breakdown.SameArtist += applyWeightedPenalty(1.0, ctx.normalizers.MaxSameArtist, config.SameArtistPenalty)
+				breakdown.SameArtist += w.artistPenaltyRatio
 			}
 
 			if edge.SameAlbum {
-				breakdown.SameAlbum += applyWeightedPenalty(1.0, ctx.normalizers.MaxSameAlbum, config.SameAlbumPenalty)
+				breakdown.SameAlbum += w.albumPenaltyRatio
 			}
 
-			breakdown.EnergyDelta += applyWeightedPenalty(edge.EnergyDelta, ctx.normalizers.MaxEnergyDelta, config.EnergyDeltaWeight)
+			breakdown.EnergyDelta += edge.EnergyDelta * w.energyFactor
 
-			breakdown.BPMDelta += applyWeightedPenalty(edge.BPMDelta, ctx.normalizers.MaxBPMDelta, config.BPMDeltaWeight)
+			breakdown.BPMDelta += edge.BPMDelta * w.bpmFactor
 
-			if genreEnabled {
+			if w.genreEnabled {
 				rawPenalty := edge.GenreDifference
-				if genreSign < 0 {
+				if w.genreSign < 0 {
 					rawPenalty = 1.0 - rawPenalty
 				}
 
-				breakdown.GenreChange += rawPenalty * genreAbsWeight
+				breakdown.GenreChange += rawPenalty * w.genreAbsWeight
 			}
 		}
 
@@ -633,13 +663,6 @@ func segmentFitnessWithBreakdown(tracks []playlist.Track, start, end int, config
 		breakdown.EnergyDelta + breakdown.BPMDelta + breakdown.PositionBias + breakdown.GenreChange
 
 	return breakdown
-}
-
-// applyWeightedPenalty normalizes value to [0,1] and applies weight
-func applyWeightedPenalty(rawValue, maxValue, weight float64) float64 {
-	normalized := rawValue / maxValue
-
-	return normalized * weight
 }
 
 // reverseSegment reverses tracks[start:end+1] in place
