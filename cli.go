@@ -55,7 +55,7 @@ func RunCLI(opts RunOptions) error {
 	theoreticalMin := calculateTheoreticalMinimum(data.Tracks, data.Config, data.GACtx)
 	initialFitness := calculateFitness(data.Tracks, data.Config, data.GACtx)
 
-	fmt.Println("\nOptimizing playlist... (press Ctrl+C to stop early, or wait up to 1 hour)")
+	fmt.Println("\nOptimizing playlist... (press Ctrl+C to stop early, or wait up to 15 minutes)")
 	fmt.Printf("Initial fitness: %.10f\n", initialFitness)
 	fmt.Printf("Theoretical minimum: %.10f (not achievable, conflicting constraints)\n", theoreticalMin)
 	fmt.Println()

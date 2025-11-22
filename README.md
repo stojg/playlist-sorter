@@ -106,7 +106,7 @@ playlist-sorter/
 - Mutation: Adaptive rate (10-30%), 50/50 swap/inversion
 - Immigration: 15% per generation (mutated copies of best)
 - Local search: 2-opt on top 3% starting at generation 50, then every 100 generations
-- Timeout: 1 hour maximum
+- Timeout: 15 minutes maximum
 
 ### Fitness Function
 
