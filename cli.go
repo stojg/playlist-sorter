@@ -63,10 +63,8 @@ func RunCLI(opts RunOptions) error {
 	initialFitness := calculateFitness(data.Tracks, data.Config, data.GACtx)
 
 	fmt.Println("\nOptimizing playlist... (press Ctrl+C to stop early, or wait up to 15 minutes)")
-	initialStr := FormatMinimalPrecision(theoreticalMin, initialFitness)
-	theoreticalStr := FormatMinimalPrecision(initialFitness, theoreticalMin)
-	fmt.Printf("Initial fitness: %s\n", initialStr)
-	fmt.Printf("Theoretical minimum: %s (not achievable, conflicting constraints)\n", theoreticalStr)
+	fmt.Printf("Initial fitness: %.10f\n", initialFitness)
+	fmt.Printf("Theoretical minimum: %.10f (not achievable, conflicting constraints)\n", theoreticalMin)
 	fmt.Println()
 
 	sortedTracks := cliGeneticSort(ctx, data.Tracks, data.SharedConfig, data.GACtx, opts.PlaylistPath)
@@ -130,6 +128,7 @@ func cliGeneticSort(ctx context.Context, tracks []playlist.Track, sharedCfg *con
 
 	// Track progress with pretty printing
 	previousBestFitness := math.MaxFloat64
+	minPrecision := 2 // Start with 2 decimals, increase monotonically as needed (max 10)
 
 	// Detect if stdout is a TTY - no spinner needed in non-interactive contexts (cron, pipes, etc.)
 	isTerminal := isTTY(os.Stdout)
@@ -206,8 +205,9 @@ loop:
 					fmt.Print("\r\033[K")
 				}
 
-				fitnessStr := FormatMinimalPrecision(previousBestFitness, update.BestFitness)
-				fmt.Printf("%s Gen %d - fitness: %s\n", elapsedStr, currentGen, fitnessStr)
+				var fitnessStr string
+				fitnessStr, minPrecision = FormatWithMonotonicPrecision(previousBestFitness, update.BestFitness, minPrecision)
+				fmt.Printf("%s Gen %7d - fitness: %s\n", elapsedStr, currentGen, fitnessStr)
 				previousBestFitness = update.BestFitness
 
 				// Save playlist to disk for live monitoring with --view mode

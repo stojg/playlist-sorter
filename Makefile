@@ -12,6 +12,7 @@ install: default.pgo
 
 default.pgo:
 	go build -o playlist-sorter-pgo
+	shuf ./100_random.m3u8 -o 100_random.m3u8
 	timeout 30 ./playlist-sorter-pgo -cpuprofile=default.pgo 100_random.m3u8 || true
 	rm -f playlist-sorter-pgo
 

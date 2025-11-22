@@ -87,8 +87,8 @@ const (
 	minSwapMutations = 2
 	maxSwapMutations = 5
 
-	twoOptStartGen       = 50
-	twoOptIntervalGens   = 100
+	twoOptStartGen       = 5000
+	twoOptIntervalGens   = 5000
 	floatingPointEpsilon = 1e-10
 
 	updateIntervalGenerations = 50
