@@ -67,7 +67,7 @@ func (p *workerPool) close() {
 }
 
 const (
-	maxDuration = 15 * time.Minute
+	maxDuration = 5 * time.Minute
 
 	populationSize        = 100
 	immigrationRate       = 0.15
@@ -179,7 +179,7 @@ type GAContext struct {
 }
 
 // geneticSort optimizes track ordering using GA with fitness-based selection, crossover, mutation,
-// and 2-opt local search. Runs until context cancelled or 15 minute timeout.
+// and 2-opt local search. Runs until context cancelled or 5 minute timeout.
 func geneticSort(ctx context.Context, tracks []playlist.Track, sharedConfig *config.SharedConfig, updateChan chan<- GAUpdate, epoch int, gaCtx *GAContext) []playlist.Track {
 	var (
 		startTime    = time.Now()
