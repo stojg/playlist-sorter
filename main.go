@@ -35,7 +35,7 @@ func run() int {
 	args := flag.Args()
 	if len(args) != 1 {
 		fmt.Println("Usage: playlist-sorter [flags] <playlist.m3u8>")
-		fmt.Println("Example: playlist-sorter /Volumes/music/Music/low_energy_liquid_dnb.m3u8")
+		fmt.Println("Example: playlist-sorter /path/to/playlist.m3u8")
 		fmt.Println("\nFlags:")
 		flag.PrintDefaults()
 

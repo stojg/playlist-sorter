@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -50,6 +51,7 @@ func ReadPlaylist(path string) ([]Track, error) {
 // LoadPlaylistWithMetadata reads a playlist and fetches metadata from beets for each track
 // Tracks that fail to load metadata are filtered out and not included in the result
 // Displays progress as it fetches metadata for each track if verbose is true
+// Relative track paths are resolved against the playlist's directory
 func LoadPlaylistWithMetadata(path string, verbose bool) ([]Track, error) {
 	tracks, err := ReadPlaylist(path)
 	if err != nil {
@@ -60,6 +62,9 @@ func LoadPlaylistWithMetadata(path string, verbose bool) ([]Track, error) {
 		fmt.Printf("Loading metadata for %d tracks...\n", len(tracks))
 	}
 
+	// Get the directory containing the playlist for resolving relative paths
+	playlistDir := filepath.Dir(path)
+
 	// Fetch metadata for each track, filtering out failures
 	validTracks := make([]Track, 0, len(tracks))
 	skippedCount := 0
@@ -69,7 +74,7 @@ func LoadPlaylistWithMetadata(path string, verbose bool) ([]Track, error) {
 			fmt.Printf("[+] Processed %d/%d tracks...\n", i+1, len(tracks))
 		}
 
-		metadata, err := GetTrackMetadata(tracks[i].Path)
+		metadata, err := GetTrackMetadata(tracks[i].Path, playlistDir)
 		if err != nil {
 			if verbose {
 				fmt.Printf("[!] Skipping track (could not load metadata): %s: %v\n", tracks[i].Path, err)

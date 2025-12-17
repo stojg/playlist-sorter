@@ -46,13 +46,14 @@ var (
 	energyRegex = regexp.MustCompile(`Energy\s+(\d+)`)
 )
 
-// GetTrackMetadata fetches metadata for a track by reading the file directly
-// The trackPath can be either relative to /Volumes/music/Music/ or an absolute path
-func GetTrackMetadata(trackPath string) (*Track, error) {
-	// If path is already absolute, use it as-is; otherwise prepend base directory
+// GetTrackMetadata fetches metadata for a track by reading the file directly.
+// The trackPath can be absolute or relative. Relative paths are resolved against
+// the provided baseDir (typically the playlist's directory).
+func GetTrackMetadata(trackPath string, baseDir string) (*Track, error) {
+	// If path is already absolute, use it as-is; otherwise resolve against base directory
 	fullPath := trackPath
-	if !filepath.IsAbs(trackPath) {
-		fullPath = filepath.Join("/Volumes/music/Music", trackPath)
+	if !filepath.IsAbs(trackPath) && baseDir != "" {
+		fullPath = filepath.Join(baseDir, trackPath)
 	}
 
 	// Open the audio file
